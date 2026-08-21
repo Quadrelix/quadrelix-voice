@@ -1,0 +1,14 @@
+node_modules/
+.env
+generated_bills/*.png
+!generated_bills/.gitkeep
+
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Generated bill images
+backend/generated_bills/*.png
+!backend/generated_bills/.gitkeep

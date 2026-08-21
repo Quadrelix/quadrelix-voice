@@ -1,0 +1,131 @@
+{
+  "shops": [
+    {
+      "shop_id": "shop_1",
+      "shop_name": "Rohit General Store",
+      "upi_id": "9302248439@axl",
+      "owner_phone": "9302248439"
+    }
+  ],
+  "transactions": [
+    {
+      "transaction_id": "b0ff32d8-d9c3-4adb-be0c-87ad4e67815e",
+      "shop_id": "shop_1",
+      "customer_phone": "8989858159",
+      "items": [
+        {
+          "product_name": "Red Kurta",
+          "quantity": 5,
+          "price": 100,
+          "line_total": 500
+        }
+      ],
+      "total_amount": 500,
+      "status": "sent",
+      "bill_image_path": "D:\\Desktop\\Quadrerlix2\\mvp-project\\backend\\generated_bills\\bill_b0ff32d8-d9c3-4adb-be0c-87ad4e67815e.png",
+      "created_at": "2026-08-21T07:13:07.928Z"
+    },
+    {
+      "transaction_id": "e17d49e0-dbdd-42d4-ace3-e60b4258a85d",
+      "shop_id": "shop_1",
+      "customer_phone": "8989858159",
+      "items": [
+        {
+          "product_name": "Green Baggy Jeans",
+          "quantity": 5,
+          "price": 400,
+          "line_total": 2000
+        }
+      ],
+      "total_amount": 2000,
+      "status": "confirmed",
+      "bill_image_path": "D:\\Desktop\\Quadrerlix2\\mvp-project\\backend\\generated_bills\\bill_e17d49e0-dbdd-42d4-ace3-e60b4258a85d.png",
+      "created_at": "2026-08-21T08:29:26.409Z"
+    },
+    {
+      "transaction_id": "b9db5c17-ea33-46fb-a79c-8ce29f0fd7bd",
+      "shop_id": "shop_1",
+      "customer_phone": "9302248439",
+      "items": [
+        {
+          "product_name": "Yellow Dhoti",
+          "quantity": 5,
+          "price": 300,
+          "line_total": 1500
+        }
+      ],
+      "total_amount": 1500,
+      "status": "confirmed",
+      "bill_image_path": "D:\\Desktop\\Quadrerlix2\\mvp-project\\backend\\generated_bills\\bill_b9db5c17-ea33-46fb-a79c-8ce29f0fd7bd.png",
+      "created_at": "2026-08-21T08:40:16.144Z"
+    },
+    {
+      "transaction_id": "a6966156-eb18-4fd0-b9c8-7a97d8affd76",
+      "shop_id": "shop_1",
+      "customer_phone": "9302248439",
+      "items": [
+        {
+          "product_name": "White Kurti",
+          "quantity": 25,
+          "price": 25,
+          "line_total": 625
+        }
+      ],
+      "total_amount": 625,
+      "status": "confirmed",
+      "bill_image_path": "D:\\Desktop\\Quadrerlix2\\mvp-project\\backend\\generated_bills\\bill_a6966156-eb18-4fd0-b9c8-7a97d8affd76.png",
+      "created_at": "2026-08-21T08:47:36.106Z"
+    },
+    {
+      "transaction_id": "af976784-f30d-4c10-8283-54e6722daa35",
+      "shop_id": "shop_1",
+      "customer_phone": "9302248439",
+      "items": [
+        {
+          "product_name": "White Kurta",
+          "quantity": 55,
+          "price": 100,
+          "line_total": 5500
+        }
+      ],
+      "total_amount": 5500,
+      "status": "confirmed",
+      "bill_image_path": "D:\\Desktop\\Quadrerlix2\\mvp-project\\backend\\generated_bills\\bill_af976784-f30d-4c10-8283-54e6722daa35.png",
+      "created_at": "2026-08-21T09:00:36.517Z"
+    },
+    {
+      "transaction_id": "7e85c9ac-9351-4a88-b3dc-e73375d1f6e3",
+      "shop_id": "shop_1",
+      "customer_phone": "9302248439",
+      "items": [
+        {
+          "product_name": "Black Kurti",
+          "quantity": 5,
+          "price": 525,
+          "line_total": 2625
+        }
+      ],
+      "total_amount": 2625,
+      "status": "confirmed",
+      "bill_image_path": "D:\\Desktop\\Quadrerlix2\\mvp-project\\backend\\generated_bills\\bill_7e85c9ac-9351-4a88-b3dc-e73375d1f6e3.png",
+      "created_at": "2026-08-21T10:45:48.899Z"
+    },
+    {
+      "transaction_id": "ed6efb01-bf52-4f81-a6ee-eb5b9c84c8ac",
+      "shop_id": "shop_1",
+      "customer_phone": "9302248439",
+      "items": [
+        {
+          "product_name": "White Kurti",
+          "quantity": 5,
+          "price": 222,
+          "line_total": 1110
+        }
+      ],
+      "total_amount": 1110,
+      "status": "confirmed",
+      "bill_image_path": "D:\\Desktop\\Quadrerlix2\\mvp-project\\backend\\generated_bills\\bill_ed6efb01-bf52-4f81-a6ee-eb5b9c84c8ac.png",
+      "created_at": "2026-08-21T10:46:22.542Z"
+    }
+  ]
+}
