@@ -1,10 +1,6 @@
 import axios from "axios";
 
-// TODO: change this to your backend's actual address.
-// - Android emulator talking to a backend on your laptop -> "http://10.0.2.2:3000"
-// - Physical phone on same wifi as your laptop           -> "http://<your-laptop-ip>:3000"
-// - Deployed backend (Render/Railway/etc.)                -> "https://your-backend-url.com"
-const BASE_URL = "http://192.168.43.161:3000";
+const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 const api = axios.create({ baseURL: BASE_URL });
 
