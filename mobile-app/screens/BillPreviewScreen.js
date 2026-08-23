@@ -16,12 +16,16 @@ export default function BillPreviewScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
+  const [imageVersion, setImageVersion] = useState(null);
 
   useEffect(() => {
     (async () => {
       try {
         const result = await generateBill(transactionId);
         setBillImagePath(result.bill_image_path);
+        // The server overwrites the same bill filename after an edit. A version
+        // query prevents React Native from showing its cached previous image.
+        setImageVersion(Date.now());
       } catch (err) {
         Alert.alert("Error", err.response?.data?.error || "Bill nahi bana");
       } finally {
@@ -38,9 +42,9 @@ export default function BillPreviewScreen({ route, navigation }) {
         "Ho gaya!",
         result.send_result.status === "simulated"
           ? "Bill generate ho gaya (WhatsApp abhi test mode mein hai — backend console mein dekho)"
-          : "Bill WhatsApp par bhej diya gaya"
+          : "Bill WhatsApp par bhej diya gaya",
+        [{ text: "OK", onPress: () => navigation.reset({ index: 0, routes: [{ name: "RecordSale" }] }) }]
       );
-      navigation.popToTop();
     } catch (err) {
       Alert.alert("Error", err.response?.data?.error || "Bhejne mein error aayi");
     } finally {
@@ -57,7 +61,7 @@ export default function BillPreviewScreen({ route, navigation }) {
     );
   }
 
-  const imageUrl = getBillImageUrl(billImagePath);
+  const imageUrl = getBillImageUrl(billImagePath, imageVersion);
 
   return (
     <View style={styles.container}>

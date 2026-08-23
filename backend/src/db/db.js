@@ -55,6 +55,41 @@ async function addItemToTransaction(transaction_id, item) {
   return txn;
 }
 
+async function updateTransactionItem(transaction_id, itemIndex, item) {
+  await db.read();
+  const txn = db.data.transactions.find((t) => t.transaction_id === transaction_id);
+  if (!txn) throw new Error("Transaction not found");
+  if (txn.status === "sent") throw new Error("A sent bill cannot be edited");
+  if (!Number.isInteger(itemIndex) || itemIndex < 0 || itemIndex >= txn.items.length) {
+    throw new Error("Item not found");
+  }
+
+  txn.items[itemIndex] = item;
+  txn.total_amount = txn.items.reduce((sum, current) => sum + current.line_total, 0);
+  // A later edit makes any previously generated image out of date.
+  txn.bill_image_path = null;
+  await db.write();
+  return txn;
+}
+
+async function removeTransactionItem(transaction_id, itemIndex) {
+  await db.read();
+  const txn = db.data.transactions.find((t) => t.transaction_id === transaction_id);
+  if (!txn) throw new Error("Transaction not found");
+  if (txn.status === "sent") throw new Error("A sent bill cannot be edited");
+  if (!Number.isInteger(itemIndex) || itemIndex < 0 || itemIndex >= txn.items.length) {
+    throw new Error("Item not found");
+  }
+  if (txn.items.length === 1) throw new Error("The last item cannot be removed; edit it instead");
+
+  txn.items.splice(itemIndex, 1);
+  txn.total_amount = txn.items.reduce((sum, current) => sum + current.line_total, 0);
+  // A later edit makes any previously generated image out of date.
+  txn.bill_image_path = null;
+  await db.write();
+  return txn;
+}
+
 async function setCustomerPhone(transaction_id, phone) {
   await db.read();
   const txn = db.data.transactions.find((t) => t.transaction_id === transaction_id);
@@ -97,6 +132,8 @@ module.exports = {
   init,
   createTransaction,
   addItemToTransaction,
+  updateTransactionItem,
+  removeTransactionItem,
   setCustomerPhone,
   markBillGenerated,
   markSent,

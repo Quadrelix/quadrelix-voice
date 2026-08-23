@@ -205,6 +205,49 @@ router.post("/confirm-contact", async (req, res) => {
   }
 });
 
+/** Edit one item while the bill is still a draft. */
+router.put("/transaction/:id/items/:itemIndex", async (req, res) => {
+  try {
+    const itemIndex = Number(req.params.itemIndex);
+    const productName = String(req.body.product_name || "").trim();
+    const quantity = Number(req.body.quantity);
+    const price = Number(req.body.price);
+
+    if (!productName) return res.status(400).json({ error: "Product name is required" });
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      return res.status(400).json({ error: "Quantity must be greater than zero" });
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      return res.status(400).json({ error: "Price cannot be negative" });
+    }
+
+    const transaction = await db.updateTransactionItem(req.params.id, itemIndex, {
+      product_name: productName,
+      quantity,
+      price,
+      line_total: quantity * price,
+    });
+    return res.json({ transaction });
+  } catch (err) {
+    console.error("PUT /api/transaction/:id/items/:itemIndex error:", err);
+    return res.status(400).json({ error: err.message || "Could not update item" });
+  }
+});
+
+/** Remove one item while the bill is still a draft. */
+router.delete("/transaction/:id/items/:itemIndex", async (req, res) => {
+  try {
+    const transaction = await db.removeTransactionItem(
+      req.params.id,
+      Number(req.params.itemIndex)
+    );
+    return res.json({ transaction });
+  } catch (err) {
+    console.error("DELETE /api/transaction/:id/items/:itemIndex error:", err);
+    return res.status(400).json({ error: err.message || "Could not remove item" });
+  }
+});
+
 /**
  * STEP 3 — Generate the bill image + UPI QR.
  *

@@ -1,8 +1,47 @@
-import React from "react";
-import { FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import React, { useCallback, useState } from "react";
+import { Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
+import { getTransaction, removeItem } from "../services/api";
 
 export default function ReviewSaleScreen({ route, navigation }) {
-  const { transactionId, items, total } = route.params;
+  const { transactionId, items: initialItems, total: initialTotal } = route.params;
+  const [items, setItems] = useState(initialItems);
+  const [total, setTotal] = useState(initialTotal);
+
+  const refreshTransaction = useCallback(async () => {
+    try {
+      const result = await getTransaction(transactionId);
+      setItems(result.transaction.items);
+      setTotal(result.transaction.total_amount);
+    } catch (err) {
+      Alert.alert("Error", err.response?.data?.error || "Bill ki details load nahi hui");
+    }
+  }, [transactionId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshTransaction();
+    }, [refreshTransaction])
+  );
+
+  function handleRemove(itemIndex) {
+    Alert.alert("Item Hata Dein?", "Ye item bill se remove ho jayega.", [
+      { text: "Nahi", style: "cancel" },
+      {
+        text: "Hata Dein",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const result = await removeItem(transactionId, itemIndex);
+            setItems(result.transaction.items);
+            setTotal(result.transaction.total_amount);
+          } catch (err) {
+            Alert.alert("Item remove nahi hua", err.response?.data?.error || "Dobara try karein");
+          }
+        },
+      },
+    ]);
+  }
 
   return (
     <View style={styles.container}>
@@ -13,15 +52,27 @@ export default function ReviewSaleScreen({ route, navigation }) {
         data={items}
         keyExtractor={(_, index) => String(index)}
         style={styles.list}
-        renderItem={({ item }) => (
+        renderItem={({ item, index }) => (
           <View style={styles.itemRow}>
-            <View>
+            <View style={styles.itemContent}>
               <Text style={styles.itemName}>{item.product_name}</Text>
               <Text style={styles.itemDetails}>
                 {item.quantity} × ₹{item.price}
               </Text>
             </View>
-            <Text style={styles.itemPrice}>₹{item.line_total}</Text>
+            <View style={styles.itemActions}>
+              <Text style={styles.itemPrice}>₹{item.line_total}</Text>
+              <View style={styles.actionRow}>
+                <TouchableOpacity
+                  onPress={() => navigation.navigate("EditItem", { transactionId, itemIndex: index, item })}
+                >
+                  <Text style={styles.editText}>Badlein</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleRemove(index)}>
+                  <Text style={styles.removeText}>Hata Dein</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
         )}
       />
@@ -32,7 +83,8 @@ export default function ReviewSaleScreen({ route, navigation }) {
       </View>
 
       <TouchableOpacity
-        style={styles.confirmButton}
+        style={[styles.confirmButton, items.length === 0 && styles.disabledButton]}
+        disabled={items.length === 0}
         onPress={() => navigation.navigate("ConfirmContact", { transactionId, total })}
       >
         <Text style={styles.confirmButtonText}>Sahi Hai, Aage Badhein ✓</Text>
@@ -58,9 +110,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
   },
+  itemContent: { flex: 1 },
+  itemActions: { alignItems: "flex-end", marginLeft: 12 },
   itemName: { fontSize: 17, fontWeight: "600" },
   itemDetails: { fontSize: 15, color: "#666", marginTop: 4 },
   itemPrice: { fontSize: 18, fontWeight: "700" },
+  actionRow: { flexDirection: "row", gap: 14, marginTop: 8 },
+  editText: { color: "#2980b9", fontWeight: "600" },
+  removeText: { color: "#c0392b", fontWeight: "600" },
   totalRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -77,6 +134,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   confirmButtonText: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  disabledButton: { backgroundColor: "#9ca3af" },
   editButton: { paddingVertical: 14, alignItems: "center" },
   editButtonText: { color: "#2980b9", fontSize: 16, fontWeight: "600" },
 });
