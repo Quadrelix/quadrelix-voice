@@ -11,13 +11,20 @@
 // See mobile-app/README.md for full steps.
 
 import { useEffect, useState } from "react";
+import { NativeModules } from "react-native";
 
 let Voice = null;
-let voiceAvailable = true;
+let voiceAvailable = false;
 
 try {
   Voice = require("@react-native-voice/voice").default;
-  if (!Voice) voiceAvailable = false;
+  // In Expo Go the package's JavaScript can load even though its native
+  // Voice module is absent. Detect that before Voice.start() calls it.
+  voiceAvailable = Boolean(
+    Voice &&
+      NativeModules.Voice &&
+      typeof NativeModules.Voice.startSpeech === "function"
+  );
 } catch (e) {
   voiceAvailable = false;
 }
@@ -25,9 +32,7 @@ try {
 export function useVoice() {
   const [text, setText] = useState("");
   const [isListening, setIsListening] = useState(false);
-  const [error, setError] = useState(
-    voiceAvailable ? null : "Voice mic Expo Go mein kaam nahi karta — neeche text box use karein"
-  );
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!voiceAvailable) return;

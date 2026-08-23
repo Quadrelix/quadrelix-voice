@@ -38,9 +38,13 @@ export default function RecordSaleScreen({ navigation }) {
       setTotal(result.transaction.total_amount);
       setText("");
     } catch (err) {
+      const backendError = err.response?.data?.error;
+      const cannotReachBackend = !err.response;
       Alert.alert(
-        "Samajh nahi aaya",
-        err.response?.data?.error || "Please try again, e.g. '5 shirt 500'"
+        cannotReachBackend ? "Backend se connection nahi hua" : "Samajh nahi aaya",
+        cannotReachBackend
+          ? "Backend terminal chalu rakhein, phone aur laptop same Wi-Fi par rakhein, phir Expo app reload karein."
+          : backendError || "Try: '5 shoes 100'"
       );
     } finally {
       setLoading(false);
@@ -52,7 +56,7 @@ export default function RecordSaleScreen({ navigation }) {
       Alert.alert("Pehle kam se kam ek item add karein");
       return;
     }
-    navigation.navigate("ConfirmContact", { transactionId, total });
+    navigation.navigate("ReviewSale", { transactionId, items, total });
   }
 
   return (

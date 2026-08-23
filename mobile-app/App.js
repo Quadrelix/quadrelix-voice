@@ -3,6 +3,7 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
 import RecordSaleScreen from "./screens/RecordSaleScreen";
+import ReviewSaleScreen from "./screens/ReviewSaleScreen";
 import ConfirmContactScreen from "./screens/ConfirmContactScreen";
 import BillPreviewScreen from "./screens/BillPreviewScreen";
 
@@ -13,6 +14,7 @@ export default function App() {
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="RecordSale" component={RecordSaleScreen} />
+        <Stack.Screen name="ReviewSale" component={ReviewSaleScreen} />
         <Stack.Screen name="ConfirmContact" component={ConfirmContactScreen} />
         <Stack.Screen name="BillPreview" component={BillPreviewScreen} />
       </Stack.Navigator>

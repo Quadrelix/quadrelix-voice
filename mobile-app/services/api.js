@@ -1,8 +1,16 @@
 import axios from "axios";
 
-const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+export const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 const api = axios.create({ baseURL: BASE_URL });
+
+export function getBillImageUrl(billImagePath) {
+  if (!billImagePath || !BASE_URL) return null;
+
+  // The backend runs on Windows, so its returned path may use either slash.
+  const filename = billImagePath.split(/[\\/]/).pop();
+  return filename ? `${BASE_URL}/bills/${encodeURIComponent(filename)}` : null;
+}
 
 export async function parseItem(text, transactionId) {
   const res = await api.post("/api/parse-item", {

@@ -8,16 +8,14 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
-import { generateBill, sendBill } from "../services/api";
-
-// Must match services/api.js BASE_URL
-const BASE_URL = "http://192.168.43.161:3000";
+import { generateBill, getBillImageUrl, sendBill } from "../services/api";
 
 export default function BillPreviewScreen({ route, navigation }) {
   const { transactionId } = route.params;
   const [billImagePath, setBillImagePath] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -59,15 +57,24 @@ export default function BillPreviewScreen({ route, navigation }) {
     );
   }
 
-  // billImagePath is a local file path on the backend server.
-  // Fetch it via the /bills static route exposed by the backend.
-  const filename = billImagePath?.split("/").pop();
-  const imageUrl = `${BASE_URL}/bills/${filename}`;
+  const imageUrl = getBillImageUrl(billImagePath);
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Bill Ready</Text>
-      <Image source={{ uri: imageUrl }} style={styles.billImage} resizeMode="contain" />
+      {imageUrl && !imageFailed ? (
+        <Image
+          source={{ uri: imageUrl }}
+          style={styles.billImage}
+          resizeMode="contain"
+          onError={() => setImageFailed(true)}
+        />
+      ) : (
+        <View style={styles.previewError}>
+          <Text style={styles.previewErrorText}>Bill preview load nahi hua.</Text>
+          <Text style={styles.previewHint}>Phone aur backend same Wi-Fi par hone chahiye.</Text>
+        </View>
+      )}
 
       <TouchableOpacity style={styles.sendButton} onPress={handleSend} disabled={sending}>
         {sending ? (
@@ -85,6 +92,13 @@ const styles = StyleSheet.create({
   centerContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   title: { fontSize: 24, fontWeight: "bold", marginBottom: 16 },
   billImage: { width: "100%", height: 450, marginBottom: 20, borderWidth: 1, borderColor: "#eee" },
+  previewError: {
+    width: "100%", height: 450, marginBottom: 20, borderWidth: 1,
+    borderColor: "#f1b5b5", backgroundColor: "#fff8f8", alignItems: "center",
+    justifyContent: "center", padding: 24,
+  },
+  previewErrorText: { color: "#b42318", fontSize: 16, fontWeight: "700", marginBottom: 8 },
+  previewHint: { color: "#666", textAlign: "center" },
   sendButton: {
     backgroundColor: "#25D366",
     borderRadius: 8,
