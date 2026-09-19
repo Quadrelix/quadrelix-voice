@@ -1,0 +1,53 @@
+﻿Initialized native services in: C:\Users\ASUS\.gradle\native
+Initialized jansi services in: C:\Users\ASUS\.gradle\native
+Found daemon DaemonInfo{pid=25592, address=[78c7c0ff-8c6c-48d2-bdda-06b24dfbaf94 port:55791, addresses:[/127.0.0.1]], state=Idle, lastBusy=1788891624248, context=DefaultDaemonContext[uid=9918a0a8-59be-4466-a0d9-20c5b1aece47,javaHome=C:\Users\ASUS\.antigravity-ide\extensions\redhat.java-1.56.0-win32-x64\jre\21.0.12.1-win32-x86_64,javaVersion=21,javaVendor=Eclipse Adoptium,daemonRegistryDir=C:\Users\ASUS\.gradle\daemon,pid=25592,idleTimeout=10800000,priority=NORMAL,applyInstrumentationAgent=true,nativeServicesMode=ENABLED,daemonOpts=-XX:MaxMetaspaceSize=512m,-Xmx2048m,-Dfile.encoding=UTF-8,-Duser.country=US,-Duser.language=en,-Duser.variant]} however its context does not match the desired criteria.
+JVM is incompatible.
+Wanted: DaemonRequestContext{jvmCriteria=C:\Program Files\Android\Android Studio\jbr (no JDK specified, using current Java home), daemonOpts=[-XX:MaxMetaspaceSize=512m, -Xmx2048m, -Dfile.encoding=UTF-8, -Duser.country=US, -Duser.language=en, -Duser.variant], applyInstrumentationAgent=true, nativeServicesMode=ENABLED, priority=NORMAL}
+Actual: DefaultDaemonContext[uid=9918a0a8-59be-4466-a0d9-20c5b1aece47,javaHome=C:\Users\ASUS\.antigravity-ide\extensions\redhat.java-1.56.0-win32-x64\jre\21.0.12.1-win32-x86_64,javaVersion=21,javaVendor=Eclipse Adoptium,daemonRegistryDir=C:\Users\ASUS\.gradle\daemon,pid=25592,idleTimeout=10800000,priority=NORMAL,applyInstrumentationAgent=true,nativeServicesMode=ENABLED,daemonOpts=-XX:MaxMetaspaceSize=512m,-Xmx2048m,-Dfile.encoding=UTF-8,-Duser.country=US,-Duser.language=en,-Duser.variant]
+
+  Looking for a different daemon...
+Removing 0 daemon stop events from registry
+Starting a Gradle Daemon, 1 incompatible Daemon could not be reused, use --status for details
+Starting process 'Gradle build daemon'. Working directory: C:\Users\ASUS\.gradle\daemon\8.14.3 Command: C:\Program Files\Android\Android Studio\jbr\bin\java.exe --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.prefs/java.util.prefs=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.prefs/java.util.prefs=ALL-UNNAMED --add-opens=java.base/java.nio.charset=ALL-UNNAMED --add-opens=java.base/java.net=ALL-UNNAMED --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens=java.xml/javax.xml.namespace=ALL-UNNAMED -XX:MaxMetaspaceSize=512m -Xmx2048m -Dfile.encoding=UTF-8 -Duser.country=US -Duser.language=en -Duser.variant -cp C:\Users\ASUS\.gradle\wrapper\dists\gradle-8.14.3-bin\cv11ve7ro1n3o1j4so8xd9n66\gradle-8.14.3\lib\gradle-daemon-main-8.14.3.jar -javaagent:C:\Users\ASUS\.gradle\wrapper\dists\gradle-8.14.3-bin\cv11ve7ro1n3o1j4so8xd9n66\gradle-8.14.3\lib\agents\gradle-instrumentation-agent-8.14.3.jar org.gradle.launcher.daemon.bootstrap.GradleDaemon 8.14.3
+Successfully started process 'Gradle build daemon'
+An attempt to start the daemon took 2.792 secs.
+The client will now receive all logging from the daemon (pid: 37748). The daemon log file: C:\Users\ASUS\.gradle\daemon\8.14.3\daemon-37748.out.log
+Starting build in new daemon [memory: 2 GiB]
+Using 12 worker leases.
+Received JVM installation metadata from 'C:\Program Files\Android\Android Studio\jbr': {JAVA_HOME=C:\Program Files\Android\Android Studio\jbr, JAVA_VERSION=21.0.6, JAVA_VENDOR=JetBrains s.r.o., RUNTIME_NAME=OpenJDK Runtime Environment, RUNTIME_VERSION=21.0.6+-13391695-b895.109, VM_NAME=OpenJDK 64-Bit Server VM, VM_VERSION=21.0.6+-13391695-b895.109, VM_VENDOR=JetBrains s.r.o., OS_ARCH=amd64}
+Watching the file system is configured to be enabled if available
+Now considering [D:\Desktop\mvp-project-sarvam\mobile-app\android] as hierarchies to watch
+File system watching is active
+Starting Build
+Starting process 'command 'node''. Working directory: D:\Desktop\mvp-project-sarvam\mobile-app\android Command: node --print require.resolve('@react-native/gradle-plugin/package.json', { paths: [require.resolve('react-native/package.json')] })
+Successfully started process 'command 'node''
+Starting process 'command 'node''. Working directory: D:\Desktop\mvp-project-sarvam\mobile-app\android Command: node --print require.resolve('expo-modules-autolinking/package.json', { paths: [require.resolve('expo/package.json')] })
+Successfully started process 'command 'node''
+Now considering [D:\Desktop\mvp-project-sarvam\mobile-app\node_modules\@react-native\gradle-plugin, D:\Desktop\mvp-project-sarvam\mobile-app\android] as hierarchies to watch
+Resolved plugin [id: 'org.gradle.toolchains.foojay-resolver-convention', version: '0.5.0']
+.\gradlew : 
+At line:1 char:221
++ ... pData\Local\Android\Sdk"; .\gradlew assembleDebug --info 2>&1 | Out-F ...
++                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+FAILURE: Build failed with an exception.
+
+* Where:
+Settings file 'D:\Desktop\mvp-project-sarvam\mobile-app\android\settings.gradle' line: 21
+
+* What went wrong:
+Error resolving plugin [id: 'com.facebook.react.settings']
+> A build operation failed.
+      Could not read workspace metadata from C:\Users\ASUS\.gradle\caches\8.14.3\transforms\c82eb49d1e40a7062eeb6dcb22a32921\metadata.bin
+   > Could not read workspace metadata from C:\Users\ASUS\.gradle\caches\8.14.3\transforms\c82eb49d1e40a7062eeb6dcb22a32921\metadata.bin
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 12s
+Watched directory hierarchies: []

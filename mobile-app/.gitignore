@@ -1,0 +1,6 @@
+node_modules
+*.apk
+*.aab
+eas_build.json
+eas_build.log
+.expo/

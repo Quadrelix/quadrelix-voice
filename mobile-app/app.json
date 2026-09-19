@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "ai-business-assistant-mobile",
+    "slug": "ai-business-assistant-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "plugins": [
+      "expo-audio",
+      "expo-asset"
+    ],
+    "android": {
+      "package": "com.nirmal_01.aibusinessassistantmobile",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
+    },
+    "extra": {
+      "eas": {
+        "projectId": "70865e60-9d0a-4e47-913c-323b6bdb7f8b"
+      }
+    }
+  }
+}
+
