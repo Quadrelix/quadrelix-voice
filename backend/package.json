@@ -1,0 +1,30 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test",
+    "render:sample": "node scripts/render-bill-sample.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@google/genai": "^2.18.0",
+    "@napi-rs/canvas": "^1.0.8",
+    "axios": "^1.19.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "form-data": "^4.0.6",
+    "lowdb": "^7.0.1",
+    "multer": "^2.2.0",
+    "qrcode": "^1.5.4",
+    "twilio": "^6.1.0"
+  },
+  "devDependencies": {
+    "jsqr": "^1.4.0"
+  }
+}

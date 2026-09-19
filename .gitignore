@@ -1,0 +1,4 @@
+node_modules/
+.env
+generated_bills/*.png
+!generated_bills/.gitkeep
