@@ -1,4 +1,4 @@
-﻿// HandsFreeScreen.js — Pure hands-free billing screen
+// HandsFreeScreen.js — Pure hands-free billing screen
 // 1. App opens → mic starts automatically
 // 2. Shopkeeper speaks items → appear on screen silently  
 // 3. Shopkeeper says customer phone number → backend detects it (ready_to_send=true)
@@ -11,13 +11,15 @@ import {
   Animated,
   Easing,
   FlatList,
+  Image,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { useContinuousListening } from '../services/useContinuousListening';
-import { transcribeAudio, sendUtterance, finalizeBill } from '../services/api';
+import { useTapToTalk } from '../services/useTapToTalk';
+import { BASE_URL, transcribeAudio, sendUtterance, finalizeBill, sendBill, getTransaction } from '../services/api';
 
 const COUNTDOWN_SEC = 3;
 
@@ -27,6 +29,7 @@ const S = {
   SENDING: 'sending',
   DONE: 'done',
   ERROR: 'error',
+  FAILED: 'failed', // bill generated but WhatsApp send failed — bill is safe, retry possible
 };
 
 export default function HandsFreeScreen() {
@@ -37,6 +40,8 @@ export default function HandsFreeScreen() {
   const [lastHeard, setLastHeard] = useState('');
   const [parseError, setParseError] = useState(null);
   const [sendResult, setSendResult] = useState(null);
+  const [errorMsg, setErrorMsg] = useState(null);
+  const [billUrl, setBillUrl] = useState(null); // set when the bill PNG exists but the send failed
   const [secondsLeft, setSecondsLeft] = useState(COUNTDOWN_SEC);
 
   const countdownRef = useRef(null);
@@ -51,7 +56,7 @@ export default function HandsFreeScreen() {
 
   // ── Segment handler ──────────────────────────────────────────────────────
   const onSegment = useCallback(async (uri) => {
-    if ([S.COUNTDOWN, S.SENDING, S.DONE].includes(appStateRef.current)) return;
+    if ([S.COUNTDOWN, S.SENDING, S.DONE, S.FAILED].includes(appStateRef.current)) return;
 
     let text;
     try {
@@ -82,10 +87,21 @@ export default function HandsFreeScreen() {
     start: startListening, stop: stopListening,
   } = useContinuousListening({ onSegment });
 
+  // Noise-safe capture, default ON: records only between two taps, so music
+  // and street noise can never reach Sarvam. 'auto' keeps the original
+  // always-on listening for a quiet counter.
+  const [mode, setMode] = useState('tap');
+  const tap = useTapToTalk({ onSegment });
+
   useEffect(() => {
-    startListening();
+    if (mode === 'auto') startListening();
     return () => { stopListening(); clearCountdown(); };
-  }, []);
+  }, [mode]);
+
+  async function toggleMode() {
+    if (mode === 'tap' && tap.recording) await tap.stop();
+    setMode((m) => (m === 'tap' ? 'auto' : 'tap'));
+  }
 
   // ── Countdown ────────────────────────────────────────────────────────────
   function clearCountdown() {
@@ -117,20 +133,71 @@ export default function HandsFreeScreen() {
   }
 
   async function autoSend(phone, txnId) {
-    if (!phone || !txnId) { setStateSafe(S.ERROR); return; }
+    if (!phone || !txnId) {
+      setErrorMsg('Phone ya transaction ID nahi mila');
+      setStateSafe(S.ERROR);
+      return;
+    }
+    // Strip country code (91/+91) if present, keep last 10 digits
+    const cleanPhone = phone.replace(/\D/g, '').replace(/^91(\d{10})$/, '$1');
+    if (cleanPhone.length !== 10) {
+      setErrorMsg(`Number sahi nahi hai: ${phone} (${cleanPhone.length} digits mila)`);
+      setStateSafe(S.ERROR);
+      return;
+    }
     setStateSafe(S.SENDING);
     await stopListening();
+    if (tap.recording) await tap.stop();
     try {
-      const result = await finalizeBill(txnId, phone);
+      const result = await finalizeBill(txnId, cleanPhone);
       setSendResult(result.send_result);
       setStateSafe(S.DONE);
-    } catch { setStateSafe(S.ERROR); }
+    } catch (err) {
+      const msg = err?.response?.data?.error || err?.message || 'Server se connect nahi hua';
+      console.error('autoSend error:', msg, err);
+      setErrorMsg(msg);
+      // A failed send is not a failed sale: /finalize saves the phone and renders
+      // the bill BEFORE it sends. Ask the backend what survived — if the bill
+      // image exists, show it with a retry button instead of a dead-end error,
+      // because the likeliest cause (expired credit, sandbox window) is fixed
+      // outside the app and then the shopkeeper wants to send the SAME bill,
+      // not re-speak the whole sale.
+      try {
+        const data = await getTransaction(txnId);
+        const billPath = data?.transaction?.bill_image_path;
+        if (billPath) {
+          const filename = billPath.split(/[\\/]/).pop();
+          setBillUrl(`${BASE_URL}/bills/${filename}`);
+          setStateSafe(S.FAILED);
+          return;
+        }
+      } catch { /* fall through to the generic error screen */ }
+      setStateSafe(S.ERROR);
+    }
+  }
+
+  // Retry just the send for a bill that already exists. /api/send-bill picks up
+  // the phone and image saved by the failed /finalize — nothing is re-parsed.
+  async function retrySend() {
+    const txnId = transactionIdRef.current;
+    if (!txnId) { setStateSafe(S.ERROR); return; }
+    setStateSafe(S.SENDING);
+    try {
+      const result = await sendBill(txnId);
+      setSendResult(result.send_result);
+      setStateSafe(S.DONE);
+    } catch (err) {
+      const msg = err?.response?.data?.error || err?.message || 'Server se connect nahi hua';
+      setErrorMsg(msg);
+      setStateSafe(S.FAILED);
+    }
   }
 
   function handleNewSale() {
     clearCountdown();
     setItems([]); setTotal(0); setTxnId(null); setPhoneSafe(null);
-    setLastHeard(''); setParseError(null); setSendResult(null);
+    setLastHeard(''); setParseError(null); setSendResult(null); setErrorMsg(null);
+    setBillUrl(null);
     setSecondsLeft(COUNTDOWN_SEC);
     setStateSafe(S.LISTENING);
     startListening();
@@ -157,12 +224,34 @@ export default function HandsFreeScreen() {
     );
   }
 
+  // ── Send failed, bill survived ───────────────────────────────────────────
+  if (appState === S.FAILED) {
+    return (
+      <View style={st.centeredScreen}>
+        <Text style={st.errorEmoji}>{'🚕'}</Text>
+        <Text style={st.failedTitle}>Bill ban gayi — bhej nahi paye</Text>
+        {!!errorMsg && <Text style={st.errorDetail}>{errorMsg}</Text>}
+        {!!billUrl && <Image source={{ uri: billUrl }} style={st.billThumb} resizeMode="contain" />}
+        {!!detectedPhone && <Text style={st.failedPhone}>{detectedPhone} pe bhejni hai</Text>}
+        <TouchableOpacity style={st.newSaleBtn} onPress={retrySend}>
+          <Text style={st.newSaleBtnText}>Dobara Bhejein</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={st.skipBtn} onPress={handleNewSale}>
+          <Text style={st.skipBtnText}>Chhod do — Agla Customer →</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   // ── Error ────────────────────────────────────────────────────────────────
   if (appState === S.ERROR) {
     return (
       <View style={st.centeredScreen}>
         <Text style={st.errorEmoji}>⚠️</Text>
         <Text style={st.errorTitle}>Kuch galat hua</Text>
+        {!!errorMsg && (
+          <Text style={st.errorDetail}>{errorMsg}</Text>
+        )}
         <TouchableOpacity style={st.newSaleBtn} onPress={handleNewSale}>
           <Text style={st.newSaleBtnText}>Dobara Try Karein</Text>
         </TouchableOpacity>
@@ -176,14 +265,36 @@ export default function HandsFreeScreen() {
       <Text style={st.title}>Hands-Free Bill</Text>
       <Text style={st.subtitle}>Bolo aur phone number bolo — automatic bhej dega</Text>
 
-      {/* Mic status bar */}
-      <View style={st.statusRow}>
-        <View style={[st.dot, { backgroundColor: dotColor }]} />
-        <Text style={st.statusText}>{dotLabel}</Text>
-        {!meteringAvailable && <Text style={st.badge}> (Fixed chunks)</Text>}
-        {busy && <ActivityIndicator size="small" color="#2980b9" style={{ marginLeft: 8 }} />}
-        {queueDepth > 0 && <Text style={st.badge}> +{queueDepth}</Text>}
-      </View>
+      {/* Mode switch — shor-safe by default, auto for a quiet counter */}
+      <TouchableOpacity style={st.modeBtn} onPress={toggleMode}>
+        <Text style={st.modeBtnText}>
+          {mode === 'tap' ? 'Shor-safe mode — Auto sunne ke liye dabao' : 'Auto mode — Shor-safe ke liye dabao'}
+        </Text>
+      </TouchableOpacity>
+
+      {mode === 'tap' ? (
+        <View style={st.tapWrap}>
+          <TouchableOpacity
+            style={[st.micBtn, tap.recording && st.micBtnRec]}
+            onPress={() => (tap.recording ? tap.stop() : tap.start())}
+          >
+            <Text style={st.micBtnIcon}>{tap.recording ? '⏹' : '🎙'}</Text>
+          </TouchableOpacity>
+          <Text style={st.tapHint}>
+            {tap.recording ? 'Sun raha hoon — bolna khatam ho to dabao' : 'Bolne ke liye mic dabao'}
+          </Text>
+          {tap.busy && <ActivityIndicator size="small" color="#2980b9" />}
+          {tap.error && <Text style={st.errorText}>{tap.error}</Text>}
+        </View>
+      ) : (
+        <View style={st.statusRow}>
+          <View style={[st.dot, { backgroundColor: dotColor }]} />
+          <Text style={st.statusText}>{dotLabel}</Text>
+          {!meteringAvailable && <Text style={st.badge}> (Fixed chunks)</Text>}
+          {busy && <ActivityIndicator size="small" color="#2980b9" style={{ marginLeft: 8 }} />}
+          {queueDepth > 0 && <Text style={st.badge}> +{queueDepth}</Text>}
+        </View>
+      )}
 
       {listenError && <Text style={st.errorText}>{listenError}</Text>}
 
@@ -314,7 +425,22 @@ const st = StyleSheet.create({
   donePhone: { color: '#bdc3c7', fontSize: 20, letterSpacing: 2, marginBottom: 8 },
   simNote: { color: '#7f8c8d', fontSize: 12, marginBottom: 24, textAlign: 'center' },
   errorEmoji: { fontSize: 64, marginBottom: 16 },
-  errorTitle: { color: '#e74c3c', fontSize: 24, fontWeight: '800', marginBottom: 24 },
+  errorTitle: { color: '#e74c3c', fontSize: 24, fontWeight: '800', marginBottom: 12 },
+  errorDetail: { color: '#bdc3c7', fontSize: 14, textAlign: 'center', marginBottom: 20, paddingHorizontal: 10 },
+
+  modeBtn: { alignSelf: 'flex-start', backgroundColor: '#1c2030', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 10, marginBottom: 10 },
+  modeBtnText: { color: '#7f8c8d', fontSize: 11, fontWeight: '600' },
+  tapWrap: { alignItems: 'center', marginBottom: 14 },
+  micBtn: { width: 88, height: 88, borderRadius: 44, backgroundColor: '#27ae60', justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
+  micBtnRec: { backgroundColor: '#e74c3c' },
+  micBtnIcon: { fontSize: 36 },
+  tapHint: { color: '#bdc3c7', fontSize: 13 },
+
+  failedTitle: { color: '#e67e22', fontSize: 22, fontWeight: '800', marginBottom: 12 },
+  billThumb: { width: 190, height: 250, borderRadius: 8, borderWidth: 1, borderColor: '#2d3748', backgroundColor: '#fff', marginBottom: 16 },
+  failedPhone: { color: '#bdc3c7', fontSize: 15, letterSpacing: 1, marginBottom: 20 },
+  skipBtn: { marginTop: 14, paddingVertical: 10, paddingHorizontal: 20 },
+  skipBtnText: { color: '#7f8c8d', fontSize: 14, fontWeight: '600' },
   newSaleBtn: {
     backgroundColor: '#2980b9', borderRadius: 10,
     paddingVertical: 16, paddingHorizontal: 40, marginTop: 12,

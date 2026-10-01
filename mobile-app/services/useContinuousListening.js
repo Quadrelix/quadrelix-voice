@@ -28,7 +28,19 @@ import {
 // there is no way to tell speech from silence — the whole loop below degrades to
 // fixed-length chunks. Spreading the preset and adding the flag is the only way
 // to get it.
-const RECORDING_OPTIONS = { ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true };
+//
+// android.audioSource: 'voice_recognition' routes the mic through Android's
+// noise-suppression + beamforming stack (the same path Google Assistant uses),
+// so a loud counter and background music arrive attenuated and the shopkeeper's
+// voice dominant. See useTapToTalk.js for the noisy-shop reasoning.
+const RECORDING_OPTIONS = {
+  ...RecordingPresets.HIGH_QUALITY,
+  isMeteringEnabled: true,
+  android: {
+    ...RecordingPresets.HIGH_QUALITY.android,
+    audioSource: 'voice_recognition',
+  },
+};
 
 // ---------------------------------------------------------------------------
 // Tuning. Start here if the app cuts you off mid-sentence (raise SILENCE_CUT_MS)
@@ -41,8 +53,17 @@ const RECORDING_OPTIONS = { ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled:
 // ---------------------------------------------------------------------------
 const POLL_MS = 150; // how often the level is sampled
 const BASELINE_MS = 600; // opening window used to learn the room's noise floor
-const SPEECH_OVER_FLOOR_DB = 12; // this far above the floor counts as a voice
-const SILENCE_CUT_MS = 900; // quiet for this long after speech ends the segment
+// Measured against the shop floor, not a studio booth. At 12 the shopkeeper had
+// to be almost on top of the mic or the app "didn't hear" — a phone lying on the
+// counter catches speech a good 6-9 dB above the room, not 12. Lowered, but not
+// to nothing: the floor-tracking below is what stops a fan from reading as one
+// endless sentence, and it needs some headroom to work with.
+const SPEECH_OVER_FLOOR_DB = 9; // this far above the floor counts as a voice
+// Hinglish is spoken with pauses inside a sentence — "Dettol ... sabun" is one
+// item, not two. At 900ms the app cut on those pauses and sent half a sentence to
+// the parser, which is why items came back with a name and no price. 1.2s is past
+// the natural stop but well short of the wait between two items.
+const SILENCE_CUT_MS = 1200; // quiet for this long after speech ends the segment
 const MAX_SEGMENT_MS = 15000; // hard cap, so one long sentence still gets sent
 const MIN_SPEECH_MS = 700; // below this it's a cough, a door, a coin on glass
 const IDLE_RECYCLE_MS = 8000; // nothing said at all — restart, don't keep the file

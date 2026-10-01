@@ -41,6 +41,70 @@ test("zero is recognised in all the ways it gets said", () => {
   }
 });
 
+test("English digit-names spoken in Hindi are recognised", () => {
+  // Not a hypothetical. This is a transcript Sarvam actually produced on a real
+  // phone, from a shopkeeper reading a number out in English digit-names while
+  // the recogniser was set to hi-IN — so the English words came back in
+  // Devanagari script. Before this was handled, the whole dictation matched
+  // nothing, the sentence fell through to the item parser, and the bill grew a
+  // nameless line ("Item × 34") that blocked the send forever.
+  assert.strictEqual(
+    findPhoneNumber("नाइन थ्री जीरो डबल टू फोर एट फोर थ्री नाइन").phone,
+    "9302248439"
+  );
+  // Sarvam punctuates the end of an utterance; the full stop must not split it.
+  assert.strictEqual(
+    findPhoneNumber("नाइन थ्री जीरो डबल टू फोर एट फोर थ्री नाइन।").phone,
+    "9302248439"
+  );
+  // Same dictation when the recogniser returns Latin instead of Devanagari.
+  assert.strictEqual(
+    findPhoneNumber("nine three zero double two four eight four three nine").phone,
+    "9302248439"
+  );
+});
+
+test("a dictated English number is cut out of the text entirely", () => {
+  // The other half of the bug: with the number unrecognised, this sentence was
+  // handed to the item parser whole and billed as one 34-rupee item.
+  const { phone, rest } = findPhoneNumber("नाइन थ्री जीरो डबल टू फोर एट फोर थ्री नाइन।");
+  assert.strictEqual(phone, "9302248439");
+  assert.strictEqual(rest, "");
+});
+
+test("a mixed English/Hindi dictation still resolves", () => {
+  // People switch mid-number: Hindi words for the digits they know, English for
+  // the rest. Every position has to accept either.
+  assert.strictEqual(
+    findPhoneNumber("नौ थ्री शून्य टू दो फोर एट चार तीन नाइन").phone,
+    "9302248439"
+  );
+});
+
+test("items and an English-numbered dictation in one breath", () => {
+  const { phone, rest } = findPhoneNumber(
+    "3 dettol sabun 75 rupaye aur number नाइन थ्री जीरो डबल टू फोर एट फोर थ्री नाइन"
+  );
+  assert.strictEqual(phone, "9302248439");
+  assert.strictEqual(rest, "3 dettol sabun 75 rupaye aur");
+});
+
+test("ordinary English words are not read as digits", () => {
+  // The expansion above adds Latin spellings, and each one is a chance to turn
+  // normal shop talk into a phone number. "for" (four), "too"/"tu" (two),
+  // "ate" (eight) and "van" (one) are all real words or real Hindi, so they are
+  // deliberately NOT in the table: a false positive here sends a stranger's
+  // bill to a number nobody said.
+  for (const said of [
+    "2 kilo aam 60 rupaye for you",
+    "ye shirt tu de de",
+    "main van se aaya",
+    "usne ate kiya",
+  ]) {
+    assert.strictEqual(findPhoneNumber(said).phone, null, said);
+  }
+});
+
 test("romanized digit-words work too", () => {
   assert.strictEqual(
     findPhoneNumber("nau aath saat chhah panch char teen do ek zero").phone,

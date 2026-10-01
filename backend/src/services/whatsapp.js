@@ -63,13 +63,26 @@ async function sendViaTwilio({ phone, billImagePath, totalAmount, shopName }) {
     toNumber = "91" + toNumber; // assume Indian number if no country code given
   }
 
-  const message = await twilio.messages.create({
-    from: `whatsapp:${TWILIO_WHATSAPP_NUMBER}`,
-    to: `whatsapp:+${toNumber}`,
-    body: `${shopName} — Your bill total: ₹${totalAmount}. Scan the QR in the image to pay.`,
-    mediaUrl: [publicImageUrl],
-  });
+  console.log(`[TWILIO] Sending to whatsapp:+${toNumber} from whatsapp:${TWILIO_WHATSAPP_NUMBER}`);
+  console.log(`[TWILIO] Image URL: ${publicImageUrl}`);
 
+  let message;
+  try {
+    message = await twilio.messages.create({
+      from: `whatsapp:${TWILIO_WHATSAPP_NUMBER}`,
+      to: `whatsapp:+${toNumber}`,
+      body: `${shopName} — Your bill total: ₹${totalAmount}. Scan the QR in the image to pay.`,
+      mediaUrl: [publicImageUrl],
+    });
+  } catch (twilioErr) {
+    console.error('[TWILIO ERROR] Code:', twilioErr.code);
+    console.error('[TWILIO ERROR] Message:', twilioErr.message);
+    console.error('[TWILIO ERROR] More info:', twilioErr.moreInfo);
+    console.error('[TWILIO ERROR] Status:', twilioErr.status);
+    throw twilioErr;
+  }
+
+  console.log(`[TWILIO] Message SID: ${message.sid}`);
   return { status: "sent", provider: "twilio", sid: message.sid };
 }
 

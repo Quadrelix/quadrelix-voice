@@ -2,3 +2,7 @@ node_modules/
 .env
 generated_bills/*.png
 !generated_bills/.gitkeep
+
+# Runtime DB — changes on every test run; the default shop skeleton lives in
+# backend/src/db/db.js (defaultData), so a missing file is not lost data.
+backend/src/db/data.json

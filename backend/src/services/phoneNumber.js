@@ -22,24 +22,45 @@
 // which varies ("saat" / "sat", "panch" / "paanch"). English "no" is left out on
 // purpose — it means "nau" (9) to some speakers but "nahi" to everyone else, and
 // guessing wrong here sends a bill to the wrong number.
+//
+// The ENGLISH column is not decoration. Shopkeepers read a customer's number out
+// in English digit names, and Sarvam — set to hi-IN — faithfully writes those
+// English words in DEVANAGARI script: "nine three zero" arrives as
+// "नाइन थ्री जीरो". On the real thing this cost a working dictation:
+// "नाइन थ्री जीरो डबल टू फोर एट फोर थ्री नाइन" (9302248439) matched nothing at
+// all, so no number was found — and worse, the sentence then fell through to the
+// item parser, which billed the whole thing as one nameless 34-rupee item and
+// blocked the send waiting for a price nobody could give. The Devanagari-
+// transliterated forms below are what that sounds like in script; the plain
+// Latin forms cover the rare case where Sarvam returns Hinglish in Latin.
 const DIGIT_WORDS = {
+  // 0
   "शून्य": "0", "सुन्य": "0", "जीरो": "0", "ज़ीरो": "0", zero: "0", jeero: "0", sunya: "0",
-  "एक": "1", ek: "1", ik: "1",
-  "दो": "2", do: "2", doh: "2",
-  "तीन": "3", teen: "3", tin: "3",
-  "चार": "4", char: "4", chaar: "4",
-  "पांच": "5", "पाँच": "5", panch: "5", paanch: "5", panj: "5",
-  "छह": "6", "छः": "6", "छे": "6", "छह़": "6", chhah: "6", chah: "6", cheh: "6", chhe: "6", chay: "6",
-  "सात": "7", saat: "7", sat: "7",
-  "आठ": "8", aath: "8", ath: "8",
-  "नौ": "9", nau: "9", nao: "9",
+  // 1
+  "एक": "1", "वन": "1", ek: "1", ik: "1", one: "1",
+  // 2
+  "दो": "2", "टू": "2", "टु": "2", do: "2", doh: "2", two: "2",
+  // 3
+  "तीन": "3", "थ्री": "3", teen: "3", tin: "3", three: "3", thri: "3",
+  // 4
+  "चार": "4", "फोर": "4", "फ़ोर": "4", char: "4", chaar: "4", four: "4",
+  // 5
+  "पांच": "5", "पाँच": "5", "फाइव": "5", "फ़ाइव": "5", panch: "5", paanch: "5", panj: "5", five: "5", faiv: "5",
+  // 6
+  "छह": "6", "छः": "6", "छे": "6", "छह़": "6", "सिक्स": "6", chhah: "6", chah: "6", cheh: "6", chhe: "6", chay: "6", six: "6", siks: "6",
+  // 7
+  "सात": "7", "सेवन": "7", saat: "7", sat: "7", seven: "7", sevan: "7",
+  // 8
+  "आठ": "8", "एट": "8", "एट्": "8", aath: "8", ath: "8", eight: "8",
+  // 9
+  "नौ": "9", "नाइन": "9", "नाईन": "9", nau: "9", nao: "9", nine: "9", nain: "9", nin: "9",
 };
 
 // "डबल सात" = 77. This is how people actually read numbers out loud, and without
 // it a perfectly ordinary dictation lands one digit short and gets rejected.
 const REPEAT_WORDS = {
-  "डबल": 2, "डब्बल": 2, double: 2, dabal: 2,
-  "ट्रिपल": 3, triple: 3, tripal: 3,
+  "डबल": 2, "डब्बल": 2, "डबल्": 2, double: 2, dabal: 2, dabbal: 2, dubble: 2,
+  "ट्रिपल": 3, "ट्रिप्पल": 3, triple: 3, tripal: 3, tripple: 3,
 };
 
 // Devanagari numerals. Sarvam usually returns ASCII digits, but "usually" isn't

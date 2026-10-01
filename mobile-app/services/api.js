@@ -7,7 +7,7 @@ import axios from "axios";
 //
 // Exported because screens need it to build image URLs — keep it defined here
 // only, so there's one place to change when your laptop's IP moves.
-export const BASE_URL = "http://192.168.43.161:3000";
+export const BASE_URL = "http://10.157.20.161:3000";
 
 const api = axios.create({ baseURL: BASE_URL });
 
