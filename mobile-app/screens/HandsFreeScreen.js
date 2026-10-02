@@ -21,6 +21,8 @@ import { useNavigation } from '@react-navigation/native';
 import { useContinuousListening } from '../services/useContinuousListening';
 import { useTapToTalk } from '../services/useTapToTalk';
 import { BASE_URL, transcribeAudio, sendUtterance, finalizeBill, sendBill, getTransaction } from '../services/api';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 
 const COUNTDOWN_SEC = 3;
 
@@ -44,6 +46,7 @@ export default function HandsFreeScreen() {
   const [errorMsg, setErrorMsg] = useState(null);
   const [billUrl, setBillUrl] = useState(null); // set when the bill PNG exists but the send failed
   const [credit, setCredit] = useState(false); // udaar toggle shown during the countdown
+  const [sharing, setSharing] = useState(false); // bill image being handed to the share sheet
   const [secondsLeft, setSecondsLeft] = useState(COUNTDOWN_SEC);
   const navigation = useNavigation();
 
@@ -184,6 +187,30 @@ export default function HandsFreeScreen() {
     }
   }
 
+  // Free delivery path: the app itself hands the bill image to the phone's
+  // share sheet, and WhatsApp is one tap away. Costs nothing — no Twilio, no
+  // sandbox, no provider — which makes it the default until paid WhatsApp
+  // Business API is worth it. The shopkeeper picks the customer's chat
+  // themselves, which also sidesteps the opt-in rules entirely.
+  async function shareBill() {
+    if (!billUrl) return;
+    setSharing(true);
+    try {
+      const fileName = billUrl.split('/').pop();
+      const dest = `${FileSystem.cacheDirectory}${fileName}`;
+      const download = await FileSystem.downloadAsync(billUrl, dest);
+      if (download.status !== 200) throw new Error('Bill image download nahi hui');
+      await Sharing.shareAsync(download.uri, {
+        mimeType: 'image/png',
+        dialogTitle: 'Bill bhejein — WhatsApp chat chunein',
+      });
+    } catch (e) {
+      setErrorMsg(e?.message || 'Share nahi khula');
+    } finally {
+      setSharing(false);
+    }
+  }
+
   // Retry just the send for a bill that already exists. /api/send-bill picks up
   // the phone and image saved by the failed /finalize — nothing is re-parsed.
   async function retrySend() {
@@ -245,8 +272,17 @@ export default function HandsFreeScreen() {
         {!!errorMsg && <Text style={st.errorDetail}>{errorMsg}</Text>}
         {!!billUrl && <Image source={{ uri: billUrl }} style={st.billThumb} resizeMode="contain" />}
         {!!detectedPhone && <Text style={st.failedPhone}>{detectedPhone} pe bhejni hai</Text>}
+        <TouchableOpacity
+          style={[st.shareBtn, sharing && { opacity: 0.6 }]}
+          onPress={shareBill}
+          disabled={sharing}
+        >
+          <Text style={st.shareBtnText}>
+            {sharing ? 'Khol raha hoon...' : 'WhatsApp se bhejein (free)'}
+          </Text>
+        </TouchableOpacity>
         <TouchableOpacity style={st.newSaleBtn} onPress={retrySend}>
-          <Text style={st.newSaleBtnText}>Dobara Bhejein</Text>
+          <Text style={st.newSaleBtnText}>Server se bhejein</Text>
         </TouchableOpacity>
         <TouchableOpacity style={st.skipBtn} onPress={handleNewSale}>
           <Text style={st.skipBtnText}>Chhod do — Agla Customer →</Text>
@@ -471,6 +507,11 @@ const st = StyleSheet.create({
   tapHint: { color: '#bdc3c7', fontSize: 13 },
 
   failedTitle: { color: '#e67e22', fontSize: 22, fontWeight: '800', marginBottom: 12 },
+  shareBtn: {
+    backgroundColor: '#25D366', borderRadius: 10, // WhatsApp green
+    paddingVertical: 16, paddingHorizontal: 40, marginTop: 8, marginBottom: 10,
+  },
+  shareBtnText: { color: '#fff', fontSize: 17, fontWeight: '700' },
   billThumb: { width: 190, height: 250, borderRadius: 8, borderWidth: 1, borderColor: '#2d3748', backgroundColor: '#fff', marginBottom: 16 },
   failedPhone: { color: '#bdc3c7', fontSize: 15, letterSpacing: 1, marginBottom: 20 },
   skipBtn: { marginTop: 14, paddingVertical: 10, paddingHorizontal: 20 },
