@@ -11,6 +11,8 @@ const { generateBillImage } = require("../services/billImage");
 const { sendBillOnWhatsApp } = require("../services/whatsapp");
 const { findPhoneNumber } = require("../services/phoneNumber");
 const { hasItemContent, matchPriceFill } = require("../services/utterance");
+const { autoFillPrices } = require("../services/productMatch");
+const { dailyReport, toISTDate } = require("../services/report");
 
 const DEFAULT_SHOP_ID = "shop_1"; // MVP: single shop, hardcoded
 
@@ -26,6 +28,11 @@ function toStoredItem(p) {
     quantity: p.quantity,
     unit: p.unit ?? null, // "kilo" / "packet" / null — shown next to the quantity
     price: p.price, // may be null — needs filling in before bill generation
+    // Catalog link + cost snapshot (from autoFillPrices). The SNAPSHOT is the
+    // point: the day's profit report reads these, so editing catalog prices
+    // later never rewrites what a past sale actually cost.
+    product_id: p.product_id ?? null,
+    purchase_price: p.purchase_price ?? null,
     // The parser guarantees price is PER UNIT, never a lot total, so this
     // multiplication is right for weighed goods too: "₹50 ka 2 kilo namak"
     // is ₹50 per kilo = ₹100.
@@ -67,6 +74,9 @@ router.post("/parse-item", async (req, res) => {
     if (!text) return res.status(400).json({ error: "text is required" });
 
     const parsedItems = await parseSaleItems(text);
+    // A price the shopkeeper didn't say can come from the catalog — this is
+    // what removes the "Price?" dead-end for known products.
+    autoFillPrices(parsedItems, await db.listProducts());
     const newItems = parsedItems.map(toStoredItem);
 
     let transaction;
@@ -242,6 +252,10 @@ router.post("/utterance", async (req, res) => {
     if (hasItemContent(rest)) {
       try {
         const parsed = await parseSaleItems(rest);
+        // Catalog prices answer a missing price BEFORE matchPriceFill runs:
+        // "aam" re-spoken after a no-price line then carries the catalog
+        // price, and fills that line instead of adding a second item.
+        autoFillPrices(parsed, await db.listProducts());
         const { fills, additions } = matchPriceFill(transaction ? transaction.items : [], parsed);
 
         // Fills first: they answer a price the bill is already blocked on.
@@ -326,6 +340,13 @@ router.post("/finalize", async (req, res) => {
 
     transaction = await db.setCustomerPhone(transaction_id, cleanPhone);
 
+    // Udaar: the sale is real, only the payment is deferred. 'credit' lands
+    // in the day's outstanding total on the report; anything else is 'paid'.
+    const paymentStatus = req.body.payment_status === "credit" ? "credit" : "paid";
+    if (paymentStatus === "credit") {
+      transaction = await db.setPaymentStatus(transaction_id, "credit");
+    }
+
     const shop = await db.getShop(transaction.shop_id);
     const billImagePath = await generateBillImage({ transaction, shop });
     transaction = await db.markBillGenerated(transaction_id, billImagePath);
@@ -347,6 +368,109 @@ router.post("/finalize", async (req, res) => {
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
+});
+
+/* ==========================================================================
+ * PRODUCT CATALOG & DAILY REPORT
+ *
+ * The catalog is what turns voice sales into profit numbers: purchase_price
+ * powers the report, selling_price auto-fills unpriced items, stock_qty
+ * counts down as bills are sent, min_stock_level flags low stock.
+ * ========================================================================== */
+
+/**
+ * List the catalog. Optionally ?q= filters by name/brand substring.
+ */
+router.get("/products", async (req, res) => {
+  const products = await db.listProducts();
+  const q = String(req.query.q || "").toLowerCase().trim();
+  const filtered = q
+    ? products.filter(
+        (p) =>
+          String(p.name).toLowerCase().includes(q) ||
+          String(p.brand || "").toLowerCase().includes(q)
+      )
+    : products;
+  res.json({ products: filtered });
+});
+
+// Shared shape check for create/update. Returns a message or null.
+function validateProduct(body) {
+  if (!body.name || !String(body.name).trim()) return "name is required";
+  if (body.selling_price == null || Number(body.selling_price) < 0) {
+    return "selling_price is required (>= 0)";
+  }
+  if (body.purchase_price != null && Number(body.purchase_price) < 0) {
+    return "purchase_price must be >= 0";
+  }
+  return null;
+}
+
+/**
+ * Add a product. body: { name, brand?, purchase_price?, selling_price,
+ * stock_qty?, category?, min_stock_level? }
+ */
+router.post("/products", async (req, res) => {
+  const problem = validateProduct(req.body);
+  if (problem) return res.status(400).json({ error: problem });
+  const product = await db.upsertProduct({
+    name: String(req.body.name).trim(),
+    brand: req.body.brand ? String(req.body.brand).trim() : null,
+    category: req.body.category ? String(req.body.category).trim() : null,
+    purchase_price: req.body.purchase_price != null ? Number(req.body.purchase_price) : null,
+    selling_price: Number(req.body.selling_price),
+    stock_qty: req.body.stock_qty != null ? Number(req.body.stock_qty) : 0,
+    min_stock_level: req.body.min_stock_level != null ? Number(req.body.min_stock_level) : null,
+  });
+  res.status(201).json({ product });
+});
+
+/**
+ * Update a product. body: same fields; product_id from the URL.
+ */
+router.put("/products/:id", async (req, res) => {
+  const problem = validateProduct(req.body);
+  if (problem) return res.status(400).json({ error: problem });
+  const products = await db.listProducts();
+  if (!products.some((p) => p.product_id === req.params.id)) {
+    return res.status(404).json({ error: "Product not found" });
+  }
+  const product = await db.upsertProduct({
+    product_id: req.params.id,
+    name: String(req.body.name).trim(),
+    brand: req.body.brand ? String(req.body.brand).trim() : null,
+    category: req.body.category ? String(req.body.category).trim() : null,
+    purchase_price: req.body.purchase_price != null ? Number(req.body.purchase_price) : null,
+    selling_price: Number(req.body.selling_price),
+    stock_qty: req.body.stock_qty != null ? Number(req.body.stock_qty) : 0,
+    min_stock_level: req.body.min_stock_level != null ? Number(req.body.min_stock_level) : null,
+  });
+  res.json({ product });
+});
+
+router.delete("/products/:id", async (req, res) => {
+  const deleted = await db.deleteProduct(req.params.id);
+  if (!deleted) return res.status(404).json({ error: "Product not found" });
+  res.json({ deleted: true });
+});
+
+/**
+ * The owner's evening question, answered:
+ * "How much did I sell today and how much profit did I make?"
+ * GET /api/report/daily?date=YYYY-MM-DD (defaults to today, IST).
+ */
+router.get("/report/daily", async (req, res) => {
+  const date =
+    String(req.query.date || "").trim() || toISTDate(new Date().toISOString());
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ error: "date must look like YYYY-MM-DD" });
+  }
+  const report = dailyReport({
+    transactions: await db.listTransactions(),
+    products: await db.listProducts(),
+    date,
+  });
+  res.json(report);
 });
 
 /**

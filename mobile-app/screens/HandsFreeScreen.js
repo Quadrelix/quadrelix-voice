@@ -17,6 +17,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useContinuousListening } from '../services/useContinuousListening';
 import { useTapToTalk } from '../services/useTapToTalk';
 import { BASE_URL, transcribeAudio, sendUtterance, finalizeBill, sendBill, getTransaction } from '../services/api';
@@ -42,8 +43,11 @@ export default function HandsFreeScreen() {
   const [sendResult, setSendResult] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
   const [billUrl, setBillUrl] = useState(null); // set when the bill PNG exists but the send failed
+  const [credit, setCredit] = useState(false); // udaar toggle shown during the countdown
   const [secondsLeft, setSecondsLeft] = useState(COUNTDOWN_SEC);
+  const navigation = useNavigation();
 
+  const creditRef = useRef(false); // credit survives re-renders without resetting mid-countdown
   const countdownRef = useRef(null);
   const countdownAnim = useRef(new Animated.Value(1)).current;
   const transactionIdRef = useRef(null);
@@ -111,6 +115,8 @@ export default function HandsFreeScreen() {
   }
 
   function startCountdown(phone, txnId) {
+    setCredit(false);
+    creditRef.current = false;
     setStateSafe(S.COUNTDOWN);
     Animated.timing(countdownAnim, {
       toValue: 0, duration: COUNTDOWN_SEC * 1000, easing: Easing.linear, useNativeDriver: false,
@@ -149,7 +155,9 @@ export default function HandsFreeScreen() {
     await stopListening();
     if (tap.recording) await tap.stop();
     try {
-      const result = await finalizeBill(txnId, cleanPhone);
+      // credit = udaar: the bill still goes out on WhatsApp, but the day's
+      // report counts it under outstanding instead of paid.
+      const result = await finalizeBill(txnId, cleanPhone, creditRef.current ? 'credit' : 'paid');
       setSendResult(result.send_result);
       setStateSafe(S.DONE);
     } catch (err) {
@@ -262,7 +270,12 @@ export default function HandsFreeScreen() {
   // ── Main ─────────────────────────────────────────────────────────────────
   return (
     <View style={st.container}>
-      <Text style={st.title}>Hands-Free Bill</Text>
+      <View style={st.topRow}>
+        <Text style={st.title}>Hands-Free Bill</Text>
+        <TouchableOpacity style={st.adminBtn} onPress={() => navigation.navigate('Products')}>
+          <Text style={st.adminBtnText}>📦 Products</Text>
+        </TouchableOpacity>
+      </View>
       <Text style={st.subtitle}>Bolo aur phone number bolo — automatic bhej dega</Text>
 
       {/* Mode switch — shor-safe by default, auto for a quiet counter */}
@@ -350,6 +363,14 @@ export default function HandsFreeScreen() {
             <Animated.View style={[st.ring, { width: ringSize, height: ringSize }]} />
             <Text style={st.ringNum}>{secondsLeft}</Text>
           </View>
+          <TouchableOpacity
+            style={[st.creditBtn, credit && st.creditBtnOn]}
+            onPress={() => { setCredit(!credit); creditRef.current = !credit; }}
+          >
+            <Text style={st.creditBtnText}>
+              {credit ? '\u2713 Udaar (bina paise)' : 'Udaar? (tap karo)'}
+            </Text>
+          </TouchableOpacity>
           <TouchableOpacity style={st.cancelBtn} onPress={handleCancel}>
             <Text style={st.cancelText}>{'\u2715'} Ruko (galat number)</Text>
           </TouchableOpacity>
@@ -377,6 +398,9 @@ const st = StyleSheet.create({
   statusText: { color: '#ecf0f1', fontSize: 14, fontWeight: '600' },
   badge: { color: '#3498db', fontSize: 12 },
   errorText: { color: '#e74c3c', fontSize: 13, marginBottom: 6 },
+  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  adminBtn: { backgroundColor: '#1c2030', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12 },
+  adminBtnText: { color: '#bdc3c7', fontSize: 13, fontWeight: '700' },
 
   lastHeard: {
     color: '#bdc3c7', fontSize: 13, fontStyle: 'italic',
@@ -412,6 +436,12 @@ const st = StyleSheet.create({
   ringWrap: { width: 120, height: 120, justifyContent: 'center', alignItems: 'center', marginBottom: 36 },
   ring: { position: 'absolute', borderRadius: 9999, backgroundColor: '#27ae60', opacity: 0.25 },
   ringNum: { color: '#fff', fontSize: 52, fontWeight: '800' },
+  creditBtn: {
+    borderWidth: 1.5, borderColor: '#e67e22', borderRadius: 30,
+    paddingVertical: 12, paddingHorizontal: 28, marginBottom: 14,
+  },
+  creditBtnOn: { backgroundColor: 'rgba(230,126,34,0.18)' },
+  creditBtnText: { color: '#e67e22', fontSize: 15, fontWeight: '700' },
   cancelBtn: {
     borderWidth: 1.5, borderColor: '#e74c3c', borderRadius: 30,
     paddingVertical: 14, paddingHorizontal: 32,

@@ -84,12 +84,46 @@ export async function sendUtterance(text, transactionId) {
 // Attach the phone, render the bill and send it in a single request. Three
 // separate calls would leave the sale half-finished if the wifi drops between
 // them — phone saved, bill never sent, and nobody watching the screen.
-export async function finalizeBill(transactionId, phone) {
+// payment_status 'credit' marks an udaar sale (counted in the daily report's
+// outstanding total instead of assumed paid).
+export async function finalizeBill(transactionId, phone, paymentStatus) {
   const res = await api.post("/api/finalize", {
     transaction_id: transactionId,
     phone,
+    payment_status: paymentStatus,
   });
   return res.data; // { transaction, bill_filename, send_result }
+}
+
+// --- Product catalog & daily report -----------------------------------------
+// The catalog is what lets a sale skip the "Price?" step (unpriced items get
+// the catalog's selling price) and what makes the profit report possible.
+
+export async function listProducts() {
+  const res = await api.get("/api/products");
+  return res.data; // { products }
+}
+
+export async function createProduct(product) {
+  const res = await api.post("/api/products", product);
+  return res.data; // { product }
+}
+
+export async function updateProduct(productId, product) {
+  const res = await api.put(`/api/products/${productId}`, product);
+  return res.data; // { product }
+}
+
+export async function deleteProduct(productId) {
+  const res = await api.delete(`/api/products/${productId}`);
+  return res.data; // { deleted: true }
+}
+
+export async function dailyReport(date) {
+  const res = await api.get("/api/report/daily", {
+    params: date ? { date } : undefined,
+  });
+  return res.data;
 }
 
 export default api;

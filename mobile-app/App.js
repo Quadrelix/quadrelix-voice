@@ -6,6 +6,7 @@ import HandsFreeScreen from "./screens/HandsFreeScreen";
 import RecordSaleScreen from "./screens/RecordSaleScreen";
 import ConfirmContactScreen from "./screens/ConfirmContactScreen";
 import BillPreviewScreen from "./screens/BillPreviewScreen";
+import ProductsScreen from "./screens/ProductsScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -22,6 +23,7 @@ export default function App() {
         <Stack.Screen name="RecordSale" component={RecordSaleScreen} />
         <Stack.Screen name="ConfirmContact" component={ConfirmContactScreen} />
         <Stack.Screen name="BillPreview" component={BillPreviewScreen} />
+        <Stack.Screen name="Products" component={ProductsScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
