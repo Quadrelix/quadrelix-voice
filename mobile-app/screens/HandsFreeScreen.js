@@ -208,7 +208,11 @@ export default function HandsFreeScreen() {
     setBillUrl(null);
     setSecondsLeft(COUNTDOWN_SEC);
     setStateSafe(S.LISTENING);
-    startListening();
+    // Mode-gated on purpose: an unconditional start here silently re-armed
+    // the always-on mic in tap mode, and background noise started adding
+    // items the shopkeeper never approved. In tap mode the next recording
+    // only starts when they press the mic button.
+    if (mode === 'auto') startListening();
   }
 
   // ── UI helpers ───────────────────────────────────────────────────────────
