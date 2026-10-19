@@ -474,6 +474,61 @@ router.get("/report/daily", async (req, res) => {
 });
 
 /**
+ * The shop profile — the app header shows the real shop name instead of a
+ * hardcoded label. MVP: always shop_1.
+ */
+router.get("/shop", async (req, res) => {
+  const shop = await db.getShop(DEFAULT_SHOP_ID);
+  if (!shop) return res.status(404).json({ error: "Shop not found" });
+  res.json({ shop });
+});
+
+/**
+ * Recent sales for the home dashboard. Confirmed/sent only — drafts are
+ * half-heard sentences, not sales. Newest first, capped by ?limit (max 50).
+ * Items are summarised by the app; this returns them as stored.
+ */
+router.get("/transactions", async (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 50);
+  const transactions = (await db.listTransactions())
+    .filter((t) => ["confirmed", "sent"].includes(t.status))
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .slice(0, limit);
+  res.json({ transactions });
+});
+
+/**
+ * Customers — derived from confirmed/sent transactions grouped by phone.
+ * We never asked for a name during the voice sale, so the phone IS the
+ * customer for now. `credit_outstanding` is every udaar sale with no
+ * settlement mechanism yet — same assumption as the daily report.
+ */
+router.get("/customers", async (req, res) => {
+  const byPhone = new Map();
+  for (const t of await db.listTransactions()) {
+    if (!["confirmed", "sent"].includes(t.status)) continue;
+    const phone = t.customer_phone;
+    if (!phone) continue;
+    const agg = byPhone.get(phone) || {
+      phone,
+      total_spent: 0,
+      credit_outstanding: 0,
+      purchases: 0,
+      last_purchase: t.created_at,
+    };
+    agg.total_spent += t.total_amount || 0;
+    if (t.payment_status === "credit") agg.credit_outstanding += t.total_amount || 0;
+    agg.purchases += 1;
+    if (new Date(t.created_at) > new Date(agg.last_purchase)) agg.last_purchase = t.created_at;
+    byPhone.set(phone, agg);
+  }
+  const customers = [...byPhone.values()].sort(
+    (a, b) => new Date(b.last_purchase) - new Date(a.last_purchase)
+  );
+  res.json({ customers });
+});
+
+/**
  * Convenience — fetch a transaction's current state.
  */
 router.get("/transaction/:id", async (req, res) => {

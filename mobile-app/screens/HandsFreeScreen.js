@@ -21,6 +21,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useContinuousListening } from '../services/useContinuousListening';
 import { useTapToTalk } from '../services/useTapToTalk';
 import { BASE_URL, transcribeAudio, sendUtterance, finalizeBill, sendBill, getTransaction } from '../services/api';
+import { colors, shadow, shadowStrong } from '../theme';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 
@@ -311,19 +312,21 @@ export default function HandsFreeScreen() {
   return (
     <View style={st.container}>
       <View style={st.topRow}>
-        <Text style={st.title}>Hands-Free Bill</Text>
-        <TouchableOpacity style={st.adminBtn} onPress={() => navigation.navigate('Products')}>
-          <Text style={st.adminBtnText}>📦 Products</Text>
+        <TouchableOpacity style={st.backBtn} onPress={() => navigation.goBack()}>
+          <Text style={st.backBtnText}>←</Text>
+        </TouchableOpacity>
+        <Text style={st.title}>New Sale</Text>
+        <TouchableOpacity style={st.modeBtn} onPress={toggleMode}>
+          <Text style={st.modeBtnText}>
+            {mode === 'tap' ? '🛡 Shor-safe' : '🎧 Auto'}
+          </Text>
         </TouchableOpacity>
       </View>
-      <Text style={st.subtitle}>Bolo aur phone number bolo — automatic bhej dega</Text>
-
-      {/* Mode switch — shor-safe by default, auto for a quiet counter */}
-      <TouchableOpacity style={st.modeBtn} onPress={toggleMode}>
-        <Text style={st.modeBtnText}>
-          {mode === 'tap' ? 'Shor-safe mode — Auto sunne ke liye dabao' : 'Auto mode — Shor-safe ke liye dabao'}
-        </Text>
-      </TouchableOpacity>
+      <Text style={st.subtitle}>
+        {mode === 'tap'
+          ? 'Bolo — items apne aap jud jayenge. Number bolo to bill bhej dega.'
+          : 'Auto mode — mic hamesha sun raha hai (shaant dukaan ke liye).'}
+      </Text>
 
       {mode === 'tap' ? (
         <View style={st.tapWrap}>
@@ -429,95 +432,100 @@ export default function HandsFreeScreen() {
 }
 
 const st = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f1117', padding: 20, paddingTop: 56 },
-  title: { fontSize: 26, fontWeight: '800', color: '#fff', letterSpacing: 0.4 },
-  subtitle: { fontSize: 13, color: '#7f8c8d', marginTop: 4, marginBottom: 18 },
+  container: { flex: 1, backgroundColor: colors.bg, padding: 20, paddingTop: 54 },
+  title: { fontSize: 24, fontWeight: '800', color: colors.text, letterSpacing: -0.3, flex: 1, textAlign: 'left', marginLeft: 10 },
+  subtitle: { fontSize: 12.5, color: colors.sub, marginTop: 4, marginBottom: 14, lineHeight: 18 },
 
   statusRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   dot: { width: 12, height: 12, borderRadius: 6, marginRight: 8 },
-  statusText: { color: '#ecf0f1', fontSize: 14, fontWeight: '600' },
-  badge: { color: '#3498db', fontSize: 12 },
-  errorText: { color: '#e74c3c', fontSize: 13, marginBottom: 6 },
-  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  adminBtn: { backgroundColor: '#1c2030', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12 },
-  adminBtnText: { color: '#bdc3c7', fontSize: 13, fontWeight: '700' },
+  statusText: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  badge: { color: colors.primary, fontSize: 12 },
+  errorText: { color: colors.red, fontSize: 13, marginBottom: 6 },
+  topRow: { flexDirection: 'row', alignItems: 'center' },
+  backBtn: { paddingVertical: 4, paddingHorizontal: 4 },
+  backBtnText: { color: colors.text, fontSize: 24, fontWeight: '600' },
 
   lastHeard: {
-    color: '#bdc3c7', fontSize: 13, fontStyle: 'italic',
-    backgroundColor: '#1c2030', borderRadius: 6, padding: 8, marginBottom: 4,
+    color: colors.sub, fontSize: 13, fontStyle: 'italic',
+    backgroundColor: colors.card, borderRadius: 12, padding: 10, marginBottom: 4,
+    borderWidth: 1, borderColor: colors.line,
   },
-  parseError: { color: '#e67e22', fontSize: 12, marginBottom: 6 },
+  parseError: { color: colors.orange, fontSize: 12, marginBottom: 6 },
 
   list: { flex: 1, marginTop: 10 },
-  emptyText: { color: '#4a5568', textAlign: 'center', marginTop: 40, fontSize: 14, lineHeight: 24 },
+  emptyText: { color: colors.faint, textAlign: 'center', marginTop: 40, fontSize: 14, lineHeight: 24 },
   itemRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#1e2535',
+    backgroundColor: colors.card, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14,
+    marginBottom: 8, ...shadow,
   },
   itemLeft: { flex: 1 },
-  itemName: { color: '#ecf0f1', fontSize: 16, fontWeight: '600' },
-  itemQty: { color: '#7f8c8d', fontSize: 13, marginTop: 2 },
-  itemTotal: { color: '#2ecc71', fontSize: 16, fontWeight: '700' },
-  missingPrice: { color: '#e67e22', fontSize: 14 },
+  itemName: { color: colors.text, fontSize: 16, fontWeight: '600' },
+  itemQty: { color: colors.sub, fontSize: 13, marginTop: 2 },
+  itemTotal: { color: colors.green, fontSize: 16, fontWeight: '700' },
+  missingPrice: { color: colors.orange, fontSize: 14 },
 
   totalRow: {
     flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 14,
-    borderTopWidth: 1, borderTopColor: '#2d3748', marginTop: 4,
+    borderTopWidth: 1, borderTopColor: colors.line, marginTop: 4,
   },
-  totalLabel: { color: '#bdc3c7', fontSize: 18, fontWeight: '700' },
-  totalAmount: { color: '#2ecc71', fontSize: 22, fontWeight: '800' },
+  totalLabel: { color: colors.text, fontSize: 18, fontWeight: '700' },
+  totalAmount: { color: colors.green, fontSize: 22, fontWeight: '800' },
 
   overlay: {
-    ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(10,14,24,0.96)',
+    ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(15,23,42,0.92)',
     justifyContent: 'center', alignItems: 'center', zIndex: 10, padding: 30,
   },
-  overlayPhone: { color: '#ecf0f1', fontSize: 28, fontWeight: '800', letterSpacing: 2, marginBottom: 8 },
-  overlayLabel: { color: '#bdc3c7', fontSize: 16, marginBottom: 32, textAlign: 'center' },
+  overlayPhone: { color: '#fff', fontSize: 28, fontWeight: '800', letterSpacing: 2, marginBottom: 8 },
+  overlayLabel: { color: '#CBD5E1', fontSize: 16, marginBottom: 32, textAlign: 'center' },
   ringWrap: { width: 120, height: 120, justifyContent: 'center', alignItems: 'center', marginBottom: 36 },
-  ring: { position: 'absolute', borderRadius: 9999, backgroundColor: '#27ae60', opacity: 0.25 },
+  ring: { position: 'absolute', borderRadius: 9999, backgroundColor: colors.green, opacity: 0.35 },
   ringNum: { color: '#fff', fontSize: 52, fontWeight: '800' },
   creditBtn: {
-    borderWidth: 1.5, borderColor: '#e67e22', borderRadius: 30,
+    borderWidth: 1.5, borderColor: colors.orange, borderRadius: 30,
     paddingVertical: 12, paddingHorizontal: 28, marginBottom: 14,
   },
-  creditBtnOn: { backgroundColor: 'rgba(230,126,34,0.18)' },
-  creditBtnText: { color: '#e67e22', fontSize: 15, fontWeight: '700' },
+  creditBtnOn: { backgroundColor: 'rgba(217,119,6,0.2)' },
+  creditBtnText: { color: '#FBBF24', fontSize: 15, fontWeight: '700' },
   cancelBtn: {
-    borderWidth: 1.5, borderColor: '#e74c3c', borderRadius: 30,
+    borderWidth: 1.5, borderColor: '#F87171', borderRadius: 30,
     paddingVertical: 14, paddingHorizontal: 32,
   },
-  cancelText: { color: '#e74c3c', fontSize: 16, fontWeight: '700' },
-  sendingText: { color: '#ecf0f1', fontSize: 18, marginTop: 20, fontWeight: '600' },
+  cancelText: { color: '#FCA5A5', fontSize: 16, fontWeight: '700' },
+  sendingText: { color: '#fff', fontSize: 18, marginTop: 20, fontWeight: '600' },
 
-  centeredScreen: { flex: 1, backgroundColor: '#0f1117', justifyContent: 'center', alignItems: 'center', padding: 30 },
+  centeredScreen: { flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center', padding: 30 },
   doneEmoji: { fontSize: 72, marginBottom: 16 },
-  doneTitle: { color: '#2ecc71', fontSize: 30, fontWeight: '800', marginBottom: 8 },
-  donePhone: { color: '#bdc3c7', fontSize: 20, letterSpacing: 2, marginBottom: 8 },
-  simNote: { color: '#7f8c8d', fontSize: 12, marginBottom: 24, textAlign: 'center' },
+  doneTitle: { color: colors.green, fontSize: 30, fontWeight: '800', marginBottom: 8 },
+  donePhone: { color: colors.sub, fontSize: 20, letterSpacing: 2, marginBottom: 8 },
+  simNote: { color: colors.faint, fontSize: 12, marginBottom: 24, textAlign: 'center' },
   errorEmoji: { fontSize: 64, marginBottom: 16 },
-  errorTitle: { color: '#e74c3c', fontSize: 24, fontWeight: '800', marginBottom: 12 },
-  errorDetail: { color: '#bdc3c7', fontSize: 14, textAlign: 'center', marginBottom: 20, paddingHorizontal: 10 },
+  errorTitle: { color: colors.red, fontSize: 24, fontWeight: '800', marginBottom: 12 },
+  errorDetail: { color: colors.sub, fontSize: 14, textAlign: 'center', marginBottom: 20, paddingHorizontal: 10 },
 
-  modeBtn: { alignSelf: 'flex-start', backgroundColor: '#1c2030', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 10, marginBottom: 10 },
-  modeBtnText: { color: '#7f8c8d', fontSize: 11, fontWeight: '600' },
+  modeBtn: { backgroundColor: colors.card, borderRadius: 18, paddingVertical: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.line },
+  modeBtnText: { color: colors.text, fontSize: 11.5, fontWeight: '700' },
   tapWrap: { alignItems: 'center', marginBottom: 14 },
-  micBtn: { width: 88, height: 88, borderRadius: 44, backgroundColor: '#27ae60', justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
-  micBtnRec: { backgroundColor: '#e74c3c' },
+  micBtn: {
+    width: 92, height: 92, borderRadius: 46, backgroundColor: colors.primary,
+    justifyContent: 'center', alignItems: 'center', marginBottom: 10, ...shadowStrong,
+  },
+  micBtnRec: { backgroundColor: colors.red },
   micBtnIcon: { fontSize: 36 },
-  tapHint: { color: '#bdc3c7', fontSize: 13 },
+  tapHint: { color: colors.sub, fontSize: 13 },
 
-  failedTitle: { color: '#e67e22', fontSize: 22, fontWeight: '800', marginBottom: 12 },
+  failedTitle: { color: colors.orange, fontSize: 22, fontWeight: '800', marginBottom: 12 },
   shareBtn: {
-    backgroundColor: '#25D366', borderRadius: 10, // WhatsApp green
+    backgroundColor: colors.whatsapp, borderRadius: 14, ...shadow, // WhatsApp green
     paddingVertical: 16, paddingHorizontal: 40, marginTop: 8, marginBottom: 10,
   },
   shareBtnText: { color: '#fff', fontSize: 17, fontWeight: '700' },
-  billThumb: { width: 190, height: 250, borderRadius: 8, borderWidth: 1, borderColor: '#2d3748', backgroundColor: '#fff', marginBottom: 16 },
-  failedPhone: { color: '#bdc3c7', fontSize: 15, letterSpacing: 1, marginBottom: 20 },
+  billThumb: { width: 190, height: 250, borderRadius: 12, borderWidth: 1, borderColor: colors.line, backgroundColor: '#fff', marginBottom: 16 },
+  failedPhone: { color: colors.sub, fontSize: 15, letterSpacing: 1, marginBottom: 20 },
   skipBtn: { marginTop: 14, paddingVertical: 10, paddingHorizontal: 20 },
-  skipBtnText: { color: '#7f8c8d', fontSize: 14, fontWeight: '600' },
+  skipBtnText: { color: colors.faint, fontSize: 14, fontWeight: '600' },
   newSaleBtn: {
-    backgroundColor: '#2980b9', borderRadius: 10,
+    backgroundColor: colors.primary, borderRadius: 14, ...shadow,
     paddingVertical: 16, paddingHorizontal: 40, marginTop: 12,
   },
   newSaleBtnText: { color: '#fff', fontSize: 17, fontWeight: '700' },

@@ -126,4 +126,24 @@ export async function dailyReport(date) {
   return res.data;
 }
 
+// --- Home dashboard ---------------------------------------------------------
+// The home screen answers "aaj kaisa chal raha hai?" in one glance, so it
+// needs the shop's name, the last few bills and the customer list — all
+// derived server-side so the phone never has to hold the whole sales history.
+
+export async function getShop() {
+  const res = await api.get("/api/shop");
+  return res.data; // { shop: { shop_id, shop_name, upi_id, owner_phone } }
+}
+
+export async function recentTransactions(limit = 5) {
+  const res = await api.get("/api/transactions", { params: { limit } });
+  return res.data; // { transactions: [{ ...transaction }] } newest first
+}
+
+export async function listCustomers() {
+  const res = await api.get("/api/customers");
+  return res.data; // { customers: [{ phone, total_spent, credit_outstanding, purchases, last_purchase }] }
+}
+
 export default api;
