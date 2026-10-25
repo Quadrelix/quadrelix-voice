@@ -68,6 +68,10 @@ function findCatalogMatch(products, { product, brand } = {}) {
  * without a spoken price additionally get the catalog's selling price —
  * a price the shopkeeper said out loud is never overwritten: they may be
  * quoting a discount, or the catalog may simply be stale.
+ *
+ * A matched product with NO fixed selling price (selling_price null) leaves
+ * the item's price null — the shopkeeper says the number at billing time.
+ * The match still counts as catalog-linked, just not as price-filled.
  */
 function autoFillPrices(parsedItems, products) {
   const items = Array.isArray(parsedItems) ? parsedItems : [];
@@ -77,7 +81,7 @@ function autoFillPrices(parsedItems, products) {
     if (!match) continue;
     item.product_id = match.product_id;
     item.purchase_price = match.purchase_price ?? null;
-    if (item.price == null) {
+    if (item.price == null && match.selling_price != null) {
       item.price = match.selling_price;
       filled++;
     }

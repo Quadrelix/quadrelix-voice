@@ -10,6 +10,7 @@
 // immediately.
 
 import React, { useCallback, useState } from 'react';
+import { errorMessage } from '../services/errorMessage';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -64,7 +65,7 @@ export default function HomeScreen() {
       setReport(reportData);
       setRecent(recentData.transactions || []);
     } catch (e) {
-      setError(e?.response?.data?.error || e?.message || 'Server se connect nahi hua');
+      setError(errorMessage(e, 'Server se connect nahi hua'));
     } finally {
       setLoading(false);
       setRefreshing(false);

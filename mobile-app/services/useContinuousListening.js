@@ -17,6 +17,7 @@
 // queued URI can't be overwritten by the segment recorded after it.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { errorMessage } from "./errorMessage";
 import {
   useAudioRecorder,
   AudioModule,
@@ -118,7 +119,7 @@ export function useContinuousListening({ onSegment }) {
         }
         await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
       } catch (e) {
-        setError(e.message);
+        setError(errorMessage(e));
       }
     })();
   }, []);
@@ -237,7 +238,7 @@ export function useContinuousListening({ onSegment }) {
       await recorder.stop();
       uri = recorder.uri;
     } catch (e) {
-      setError(e.message);
+      setError(errorMessage(e));
     }
 
     // The opposite failure of a too-high floor: a floor below the real room
@@ -261,7 +262,7 @@ export function useContinuousListening({ onSegment }) {
       } catch (e) {
         // A failure to even start recording would otherwise spin this loop at
         // full speed, so it ends the session and says why.
-        setError(e.message);
+        setError(errorMessage(e));
         runningRef.current = false;
         setIsListening(false);
         return;

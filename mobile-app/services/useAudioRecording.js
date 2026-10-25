@@ -7,6 +7,7 @@
 // endpoint, which sends it to Sarvam AI and returns text.
 
 import { useState, useEffect } from "react";
+import { errorMessage } from "./errorMessage";
 import { useAudioRecorder, AudioModule, RecordingPresets, setAudioModeAsync } from "expo-audio";
 
 export function useAudioRecording() {
@@ -24,7 +25,7 @@ export function useAudioRecording() {
         }
         await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
       } catch (e) {
-        setError(e.message);
+        setError(errorMessage(e));
       }
     })();
   }, []);
@@ -36,7 +37,7 @@ export function useAudioRecording() {
       audioRecorder.record();
       setIsRecording(true);
     } catch (e) {
-      setError(e.message);
+      setError(errorMessage(e));
     }
   }
 
@@ -46,7 +47,7 @@ export function useAudioRecording() {
       setIsRecording(false);
       return audioRecorder.uri; // local file URI, ready to upload
     } catch (e) {
-      setError(e.message);
+      setError(errorMessage(e));
       setIsRecording(false);
       return null;
     }

@@ -5,6 +5,7 @@
 // sellers and low stock. Pull down to refresh.
 
 import React, { useCallback, useState } from 'react';
+import { errorMessage } from '../services/errorMessage';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -31,7 +32,7 @@ export default function ReportsScreen() {
     try {
       setReport(await dailyReport());
     } catch (e) {
-      setError(e?.response?.data?.error || e?.message || 'Server se connect nahi hua');
+      setError(errorMessage(e, 'Server se connect nahi hua'));
     } finally {
       setLoading(false);
       setRefreshing(false);

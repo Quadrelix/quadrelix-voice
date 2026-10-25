@@ -395,19 +395,39 @@ router.get("/products", async (req, res) => {
 });
 
 // Shared shape check for create/update. Returns a message or null.
+//
+// selling_price is OPTIONAL. Some goods have a fixed counter price (a packet
+// of Maggi is always ₹14); some do not (loose vegetables, a customer's
+// haggled rate, anything whose price changes by the day). For the second kind
+// the shopkeeper speaks the price at billing time — so a product may have no
+// selling price in the catalog at all, and the sale's spoken price stands.
+//
+// purchase_price is optional for the same reason: without it the profit
+// report counts that item's profit as unknown rather than zero.
 function validateProduct(body) {
   if (!body.name || !String(body.name).trim()) return "name is required";
-  if (body.selling_price == null || Number(body.selling_price) < 0) {
-    return "selling_price is required (>= 0)";
+  if (body.selling_price != null && body.selling_price !== "") {
+    if (Number.isNaN(Number(body.selling_price)) || Number(body.selling_price) < 0) {
+      return "selling_price must be a number >= 0";
+    }
   }
-  if (body.purchase_price != null && Number(body.purchase_price) < 0) {
-    return "purchase_price must be >= 0";
+  if (body.purchase_price != null && body.purchase_price !== "") {
+    if (Number.isNaN(Number(body.purchase_price)) || Number(body.purchase_price) < 0) {
+      return "purchase_price must be a number >= 0";
+    }
   }
   return null;
 }
 
+// Empty string / undefined -> null (no fixed price), else the number.
+function optionalPrice(value) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isNaN(n) ? null : n;
+}
+
 /**
- * Add a product. body: { name, brand?, purchase_price?, selling_price,
+ * Add a product. body: { name, brand?, purchase_price?, selling_price?,
  * stock_qty?, category?, min_stock_level? }
  */
 router.post("/products", async (req, res) => {
@@ -417,8 +437,8 @@ router.post("/products", async (req, res) => {
     name: String(req.body.name).trim(),
     brand: req.body.brand ? String(req.body.brand).trim() : null,
     category: req.body.category ? String(req.body.category).trim() : null,
-    purchase_price: req.body.purchase_price != null ? Number(req.body.purchase_price) : null,
-    selling_price: Number(req.body.selling_price),
+    purchase_price: optionalPrice(req.body.purchase_price),
+    selling_price: optionalPrice(req.body.selling_price),
     stock_qty: req.body.stock_qty != null ? Number(req.body.stock_qty) : 0,
     min_stock_level: req.body.min_stock_level != null ? Number(req.body.min_stock_level) : null,
   });
@@ -440,8 +460,8 @@ router.put("/products/:id", async (req, res) => {
     name: String(req.body.name).trim(),
     brand: req.body.brand ? String(req.body.brand).trim() : null,
     category: req.body.category ? String(req.body.category).trim() : null,
-    purchase_price: req.body.purchase_price != null ? Number(req.body.purchase_price) : null,
-    selling_price: Number(req.body.selling_price),
+    purchase_price: optionalPrice(req.body.purchase_price),
+    selling_price: optionalPrice(req.body.selling_price),
     stock_qty: req.body.stock_qty != null ? Number(req.body.stock_qty) : 0,
     min_stock_level: req.body.min_stock_level != null ? Number(req.body.min_stock_level) : null,
   });

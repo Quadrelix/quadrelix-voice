@@ -165,3 +165,55 @@ test("toISTDate maps a UTC evening to the next IST day", () => {
   assert.strictEqual(toISTDate("2026-10-02T23:30:00Z"), "2026-10-03");
   assert.strictEqual(toISTDate("2026-10-02T18:29:00Z"), "2026-10-02");
 });
+
+// --- Optional selling price -------------------------------------------------
+//
+// Not every product has a fixed counter price. Loose vegetables, a daily
+// rate, anything the shopkeeper quotes per customer — those go into the
+// catalog with NO selling price, and the price is spoken at billing time.
+// The catalog match still works (product_id links, purchase_price snapshots,
+// stock deducts); only the price auto-fill is skipped.
+
+test("a product with no fixed selling price leaves the spoken price alone", () => {
+  const catalog = [
+    { product_id: "v1", name: "Aam", brand: null, purchase_price: 40, selling_price: null, stock_qty: 10 },
+  ];
+  const items = [{ product: "Aam", quantity: 3, price: 60 }]; // price SPOKEN
+  const filled = autoFillPrices(items, catalog);
+  assert.strictEqual(filled, 0); // nothing was filled from the catalog
+  assert.strictEqual(items[0].price, 60); // the spoken price stands
+  assert.strictEqual(items[0].product_id, "v1"); // still linked to the catalog
+  assert.strictEqual(items[0].purchase_price, 40); // cost snapshot for profit
+});
+
+test("a product with no fixed selling price stays unpriced until spoken", () => {
+  const catalog = [
+    { product_id: "v1", name: "Aam", brand: null, purchase_price: 40, selling_price: null, stock_qty: 10 },
+  ];
+  const items = [{ product: "Aam", quantity: 3, price: null }]; // no price spoken yet
+  const filled = autoFillPrices(items, catalog);
+  assert.strictEqual(filled, 0);
+  assert.strictEqual(items[0].price, null); // still needs a price — the app shows "Price?"
+  assert.strictEqual(items[0].product_id, "v1");
+});
+
+test("a fixed selling price still auto-fills when nothing was spoken", () => {
+  const catalog = [
+    { product_id: "p1", name: "Dettol Sabun", brand: "Dettol", purchase_price: 18, selling_price: 25, stock_qty: 40 },
+  ];
+  const items = [{ product: "Dettol Sabun", quantity: 2, price: null }];
+  const filled = autoFillPrices(items, catalog);
+  assert.strictEqual(filled, 1);
+  assert.strictEqual(items[0].price, 25);
+});
+
+test("a catalog product can be saved without a selling price", async () => {
+  const product = await db.upsertProduct({
+    name: "Sabzi", brand: null, category: "Sabzi",
+    purchase_price: 30, selling_price: null, stock_qty: 20, min_stock_level: 5,
+  });
+  assert.strictEqual(product.selling_price, null);
+  const found = (await db.listProducts()).find((p) => p.product_id === product.product_id);
+  assert.strictEqual(found.selling_price, null);
+  assert.strictEqual(found.purchase_price, 30);
+});

@@ -7,6 +7,7 @@
 // remembers.
 
 import React, { useCallback, useState } from 'react';
+import { errorMessage } from '../services/errorMessage';
 import {
   ActivityIndicator,
   FlatList,
@@ -44,7 +45,7 @@ export default function CustomersScreen() {
       const data = await listCustomers();
       setCustomers(data.customers || []);
     } catch (e) {
-      setError(e?.response?.data?.error || e?.message || 'Server se connect nahi hua');
+      setError(errorMessage(e, 'Server se connect nahi hua'));
     } finally {
       setLoading(false);
       setRefreshing(false);

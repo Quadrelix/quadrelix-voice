@@ -11,6 +11,7 @@
 // transcribe → parse → phone-detect → countdown all work unchanged.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { errorMessage } from "./errorMessage";
 import {
   useAudioRecorder,
   AudioModule,
@@ -82,7 +83,7 @@ export function useTapToTalk({ onSegment }) {
         }
         await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
       } catch (e) {
-        setError(e.message);
+        setError(errorMessage(e));
       }
     })();
   }, []);
@@ -109,7 +110,7 @@ export function useTapToTalk({ onSegment }) {
         }
       }
     } catch (e) {
-      setError(e.message);
+      setError(errorMessage(e));
     } finally {
       speechRef.current = { saw: false, ms: 0 };
     }
@@ -167,7 +168,7 @@ export function useTapToTalk({ onSegment }) {
       setRecording(true);
       monitor();
     } catch (e) {
-      setError(e.message);
+      setError(errorMessage(e));
     }
   }, []);
 

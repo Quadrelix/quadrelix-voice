@@ -8,6 +8,7 @@
 // (ReportsScreen), so this screen is only about the catalog.
 
 import React, { useCallback, useMemo, useState } from 'react';
+import { errorMessage } from '../services/errorMessage';
 import {
   ActivityIndicator,
   FlatList,
@@ -53,7 +54,7 @@ export default function ProductsScreen() {
       const data = await listProducts();
       setProducts(data.products || []);
     } catch (e) {
-      setError(e?.response?.data?.error || e?.message || 'Backend se connect nahi hua');
+      setError(errorMessage(e, 'Backend se connect nahi hua'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -101,19 +102,21 @@ export default function ProductsScreen() {
   }
 
   async function save() {
-    if (!form.name.trim() || form.selling_price === '') {
-      setError('Naam aur selling price zaroori hai');
+    if (!form.name.trim()) {
+      setError('Naam zaroori hai');
       return;
     }
     setSaving(true);
     setError(null);
     try {
+      // selling_price optional: kuch products ka fixed rate hota hai, kuch ka
+      // nahi — bina price wale me bill ke waqt spoken price chalta hai.
       const payload = {
         name: form.name.trim(),
         brand: form.brand.trim() || null,
         category: form.category.trim() || null,
         purchase_price: form.purchase_price === '' ? null : Number(form.purchase_price),
-        selling_price: Number(form.selling_price),
+        selling_price: form.selling_price === '' ? null : Number(form.selling_price),
         stock_qty: form.stock_qty === '' ? 0 : Number(form.stock_qty),
         min_stock_level: form.min_stock_level === '' ? null : Number(form.min_stock_level),
       };
@@ -122,7 +125,7 @@ export default function ProductsScreen() {
       setFormOpen(false);
       await reload();
     } catch (e) {
-      setError(e?.response?.data?.error || e?.message || 'Save nahi hua');
+      setError(errorMessage(e, 'Save nahi hua'));
     } finally {
       setSaving(false);
     }
@@ -133,7 +136,7 @@ export default function ProductsScreen() {
       await deleteProduct(product.product_id);
       await reload();
     } catch (e) {
-      setError(e?.response?.data?.error || e?.message || 'Delete nahi hua');
+      setError(errorMessage(e, 'Delete nahi hua'));
     }
   }
 
@@ -192,6 +195,7 @@ export default function ProductsScreen() {
           }
           renderItem={({ item }) => {
             const low = item.min_stock_level != null && (item.stock_qty || 0) <= item.min_stock_level;
+            const fixed = item.selling_price != null;
             return (
               <View style={s.card}>
                 <View style={[s.iconBox, low && s.iconBoxLow]}>
@@ -203,7 +207,14 @@ export default function ProductsScreen() {
                     {item.brand ? <Text style={s.brand}> · {item.brand}</Text> : null}
                   </Text>
                   <Text style={s.meta}>
-                    {money(item.purchase_price ?? 0)} → {money(item.selling_price)}
+                    {fixed ? (
+                      <>
+                        {item.purchase_price != null ? `${money(item.purchase_price)} → ` : ''}
+                        {money(item.selling_price)}
+                      </>
+                    ) : (
+                      <Text style={s.noFixed}>Bill pe price batana hoga</Text>
+                    )}
                     {'   '}
                     <Text style={low ? s.lowStock : null}>
                       stock {item.stock_qty ?? 0}{low ? ' (kam!)' : ''}
@@ -264,10 +275,10 @@ export default function ProductsScreen() {
                   placeholder="18" placeholderTextColor={colors.faint} />
               </View>
               <View style={s.inputHalf}>
-                <Text style={s.label}>Selling ₹ *</Text>
+                <Text style={s.label}>Selling ₹ (optional)</Text>
                 <TextInput style={s.input} value={form.selling_price} keyboardType="numeric"
                   onChangeText={(v) => setForm({ ...form, selling_price: v })}
-                  placeholder="25" placeholderTextColor={colors.faint} />
+                  placeholder="25 ya khaali" placeholderTextColor={colors.faint} />
               </View>
             </View>
 
@@ -338,6 +349,7 @@ const s = StyleSheet.create({
   brand: { color: colors.sub, fontWeight: '400', fontSize: 13 },
   meta: { fontSize: 11.5, color: colors.sub, marginTop: 3 },
   lowStock: { color: colors.orange, fontWeight: '700' },
+  noFixed: { color: colors.faint, fontStyle: 'italic' },
   iconBtn: { padding: 8, marginLeft: 2 },
 
   errorText: { color: colors.red, fontSize: 12, marginHorizontal: 20, marginBottom: 6 },
