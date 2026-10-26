@@ -84,28 +84,47 @@ node mutation-check.js # sabotages parser.js to prove the tests aren't vacuous
 
 | Method | Path | Body | Purpose |
 |---|---|---|---|
+| POST | `/api/transcribe` | multipart `audio` | Voice → text (Sarvam STT) |
 | POST | `/api/parse-item` | `{ text, transaction_id? }` | Parse a spoken/typed sale line, start or add to a draft transaction |
+| POST | `/api/utterance` | `{ text, transaction_id? }` | One-sentence voice flow: parse items + detect phone in one call |
 | POST | `/api/confirm-contact` | `{ transaction_id, phone }` | Attach customer's phone number |
+| POST | `/api/update-item-price` | `{ transaction_id, item_index, price }` | Fill a missing price |
 | POST | `/api/generate-bill` | `{ transaction_id }` | Render the bill PNG + UPI QR, save to `generated_bills/` |
-| POST | `/api/send-bill` | `{ transaction_id }` | Send bill via WhatsApp (currently simulated — see below) |
+| POST | `/api/finalize` | `{ transaction_id, phone, payment_status? }` | Attach phone, render bill, send — in one atomic call (`credit` = udaar) |
+| POST | `/api/send-bill` | `{ transaction_id }` | Retry sending an already-rendered bill |
 | GET | `/api/transaction/:id` | — | Fetch current transaction state |
+| GET | `/api/products` | `?q=` | List catalog (optional name/brand filter) |
+| POST | `/api/products` | product fields | Add product — `selling_price` OPTIONAL (no fixed rate? leave blank) |
+| PUT | `/api/products/:id` | product fields | Update product |
+| DELETE | `/api/products/:id` | — | Delete product |
+| GET | `/api/report/daily` | `?date=YYYY-MM-DD` | Today's sales/cost/profit, best sellers, udaar, low stock (IST) |
+| GET | `/api/shop` | — | Shop profile (name shown in app header) |
+| GET | `/api/transactions` | `?limit=` | Recent confirmed/sent sales, newest first |
+| GET | `/api/customers` | — | Customers from sales, with udaar outstanding |
 
 Generated bill images are also served statically at `http://localhost:3000/bills/<filename>.png`.
 
 ## Making WhatsApp Sending Real
 
-Right now `src/services/whatsapp.js` only logs what it *would* send. To make it real:
+Two paths to send a bill, both work today:
 
-1. Pick a provider — **Twilio** is the fastest to get testing with (has a WhatsApp
-   sandbox you can use immediately, no business verification needed for testing):
-   https://www.twilio.com/whatsapp
-2. Set `WHATSAPP_PROVIDER=twilio` and your credentials in `.env`
-3. Fill in the `TODO` block in `sendBillOnWhatsApp()` inside `whatsapp.js`
-4. **Important:** most providers need the image at a **public URL**, not a local
-   file path. You'll need to either:
-   - Upload `generated_bills/*.png` to something like S3/Cloudinary first, or
-   - Deploy this backend somewhere public (Render, Railway, Fly.io) so
-     `http://your-backend-url.com/bills/<file>.png` is reachable from Twilio's servers
+- **Free (default in the app):** the phone's share sheet. The app downloads the
+  bill PNG and hands it to WhatsApp — no provider, no cost, no opt-in rules.
+  The shopkeeper picks the customer's chat themselves.
+- **Server-side (paid):** `src/services/whatsapp.js` can send via Twilio.
+  To make it real:
+  1. Pick a provider — **Twilio** is the fastest to get testing with (has a
+     WhatsApp sandbox you can use immediately, no business verification needed):
+     https://www.twilio.com/whatsapp
+  2. Set `WHATSAPP_PROVIDER=twilio` and your credentials in `.env`
+  3. **Important:** Twilio's servers fetch the bill image from a **public URL**,
+     not a local file path. Either deploy this backend somewhere public
+     (Render, Railway, Fly.io) or tunnel it (`ngrok http 3000`) and set
+     `PUBLIC_BASE_URL` to the https:// URL.
+
+> **Money decision (see docs/PRODUCTION_ROADMAP.md):** the plan is pilot-first
+> on the free share-sheet path, and paid WhatsApp Business API only once real
+> shops are on board.
 
 ## Making the UPI QR Real
 
