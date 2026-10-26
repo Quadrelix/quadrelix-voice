@@ -1,70 +1,46 @@
-# AI Business Assistant — MVP
+# BizMate AI — Voice Billing for Indian Shops
 
-Voice-first sale recording → auto bill generation → WhatsApp + UPI QR delivery.
-
-## Project Structure
+Voice-first billing app: shopkeeper **bolta hai**, app sale bana deti hai,
+bill (PNG + UPI QR) banti hai aur WhatsApp pe jaati hai. Plus product catalog,
+automatic profit calculation, daily report, customers (udaar) — sab voice ya
+few taps me.
 
 ```
-mvp-project/
-├── backend/          Node.js + Express API — TESTED AND WORKING
-└── mobile-app/        React Native (Expo) app — code skeleton
+backend/       Node.js + Express API  (JSON file DB, no database server needed)
+mobile-app/    React Native (Expo SDK 54) app — Expo Go se test hota hai
 ```
 
-## What Actually Works Right Now
+---
 
-The **backend is fully functional and already tested** end-to-end:
+## Quick Start (laptop pe run karne ke liye)
 
-1. ✅ Text → parsed sale item (quantity, product, price) — works offline with a regex
-   parser, or set `GEMINI_API_KEY` for smarter Hinglish understanding (free tier)
-2. ✅ Contact number confirmation
-3. ✅ Bill image (PNG) generation with shop details, itemized rows, total, and a
-   scannable UPI QR code
-4. ✅ "Send to WhatsApp" — currently **simulated** (logs what it would send).
-   Wiring up real WhatsApp sending needs a WhatsApp Business API account (see below).
+> Zaroorat hai: **Node.js 18+** (recommended 22), aur mobile ke liye **Expo Go**
+> app apne Android phone pe (Play Store se, free).
 
-The **mobile app is a complete code skeleton** (3 screens + navigation + API calls)
-but has NOT been run/tested here, since building and running a React Native app
-needs a phone/emulator and Android/iOS build tools that aren't available in this
-environment. You'll run it yourself with `npx expo start`.
-
-## Quick Start — Backend (do this first)
+### 1. Backend (pehle ye karo)
 
 ```bash
 cd backend
 npm install
-cp .env.example .env
-node src/server.js
+cp .env.example .env    # Windows: copy .env.example .env
+npm test                # optional — 100 tests, offline, koi API key nahi chahiye
+npm start
 ```
 
-Server starts at `http://localhost:3000`. Test it immediately without any API keys:
+Server chala to: `http://localhost:3000` pe "AI Business Assistant backend is
+running" milega. **Bina kisi API key ke sab basic flows kaam karte hain** —
+parsing offline regex parser se hota hai aur WhatsApp "simulated" mode me
+(console me log hota hai, asli send nahi).
 
-```bash
-# Step 1: record a sale item
-curl -X POST http://localhost:3000/api/parse-item \
-  -H "Content-Type: application/json" \
-  -d '{"text": "5 white shirt 500 rupaye"}'
-# -> copy the "transaction_id" from the response
+**API keys kahan lagti hain (`backend/.env`):**
 
-# Step 2: confirm customer's contact number
-curl -X POST http://localhost:3000/api/confirm-contact \
-  -H "Content-Type: application/json" \
-  -d '{"transaction_id": "<paste_id>", "phone": "9876543210"}'
+| Key | Kya karta hai | Chahiye kya? |
+|---|---|---|
+| `GEMINI_API_KEY` | Smart Hinglish item parsing (multi-item) | Optional — khaali chhodo to offline parser |
+| `SARVAM_API_KEY` | Voice recording → text (STT) | **Voice ke liye zaroori** — [sarvam.ai](https://www.sarvam.ai) free key |
+| `WHATSAPP_PROVIDER` / Twilio | Asli WhatsApp send | Optional — khaali to simulated |
 
-# Step 3: generate the bill image
-curl -X POST http://localhost:3000/api/generate-bill \
-  -H "Content-Type: application/json" \
-  -d '{"transaction_id": "<paste_id>"}'
-# -> open backend/generated_bills/bill_<id>.png to see it
-
-# Step 4: "send" it (simulated — check the terminal running the server for the log)
-curl -X POST http://localhost:3000/api/send-bill \
-  -H "Content-Type: application/json" \
-  -d '{"transaction_id": "<paste_id>"}'
-```
-
-See `backend/README.md` for full API reference and how to make WhatsApp sending real.
-
-## Quick Start — Mobile App
+### 2. Mobile app
 
 ```bash
 cd mobile-app
@@ -72,30 +48,112 @@ npm install
 npx expo start
 ```
 
-**Important:** the voice/mic feature (`@react-native-voice/voice`) needs native code
-and will NOT work in plain "Expo Go." You need a **development build**:
+Expo terminal me QR code dikhega. **Phone ko laptop ke usi Wi-Fi pe** rakho,
+Expo Go me QR scan karo. (Expo Go install: Play Store → "Expo Go" → free.)
 
-```bash
-npx expo prebuild
-npx expo run:android   # or run:ios
+**Mobile app ka ek hi important change** — apne laptop ka IP address:
+
+`mobile-app/services/api.js` me:
+
+```js
+export const BASE_URL = "http://<YOUR-LAPTOP-IP>:3000";
 ```
 
-Until you set that up, you can still test the whole flow using the text box
-that's built into each screen as a fallback — type instead of speaking.
+Apna laptop IP nikalne ke liye:
+- Windows: `ipconfig` → Wi-Fi ka `IPv4 Address`
+- Phone aur laptop same Wi-Fi pe hone chahiye, warna app backend nahi milega
 
-Before running, update `mobile-app/services/api.js` — set `BASE_URL` to wherever
-your backend is reachable from your phone/emulator (see comments in that file).
+> 💡 IP change hua to sirf `api.js` me ye ek line badlo aur app reload karo.
+> `10.157.20.161` jaisa static IP nahi hota — har Wi-Fi pe badalta hai.
 
-## Recommended Next Steps (in order)
+---
 
-1. Get the backend running locally and confirm the 4-step curl test above works
-   (it will — this has been tested).
-2. Run the mobile app in Expo Go using the **text fallback** input (skip voice for
-   now) to confirm phone ↔ backend networking works.
-3. Set up an Expo development build to enable the real microphone/voice input.
-4. Sign up for a WhatsApp Business API provider (Twilio is easiest to start with)
-   and fill in the TODO in `backend/src/services/whatsapp.js`.
-5. Replace the hardcoded `shop_1` in the backend with real shop onboarding once
-   you're ready to support more than one shop.
-6. Only after all of this works reliably — start layering in inventory, credit/udhar,
-   and analytics from the original PDF.
+## App me kya-kya hai
+
+| Screen | Kya karta hai |
+|---|---|
+| **Home** | Dashboard — aaj ki sale/profit, recent sales, low stock, quick actions |
+| **Mic (center)** | Voice billing — "2 Dettol sabun 10 rupay" bolo, number bolo, bill ready |
+| **Products** | Catalog — add/edit products, purchase/selling price, stock, min-stock |
+| **Customers** | Phone se customer history, udaar (credit) outstanding |
+| **Reports** (More) | Aaj ka profit, sales/cost, best sellers, stock kam |
+
+### Voice billing ka flow
+
+1. Home pe mic dabao (ya bottom center mic)
+2. Bolo: *"2 Dettol sabun"* — items list me aa jate hain
+3. Catalog me price hai to auto-fill ho jata hai; nahi hai to *"10 rupay"* bolo
+4. Number bolo: *"number 9876543210"* — 3 second countdown, bill ban ke jata hai
+5. WhatsApp pe bhejne ka button (ya "Server se bhejein")
+
+> **Shor-safe mode:** dukaan me music/noise ho to mic sirf tab record karta hai
+> jab tum dabate ho. Header me "🛡 Shor-safe" / "🎧 Auto" se mode badlo.
+
+---
+
+## Backend API (test ke liye handy)
+
+```bash
+# Naya product (selling price OPTIONAL — kuch products ka fixed rate nahi hota)
+curl -X POST http://localhost:3000/api/products \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Aam","purchase_price":40,"stock_qty":10}'
+
+# Voice-utterance (items + number ek saath)
+curl -X POST http://localhost:3000/api/utterance \
+  -H "Content-Type: application/json" \
+  -d '{"text":"2 aam 60 rupay number 9876543210"}'
+
+# Aaj ka report
+curl http://localhost:3000/api/report/daily
+
+# Saare products
+curl http://localhost:3000/api/products
+
+# Recent sales
+curl "http://localhost:3000/api/transactions?limit=5"
+
+# Customers (udaar samet)
+curl http://localhost:3000/api/customers
+```
+
+---
+
+## Tests
+
+```bash
+cd backend
+npm test        # 100 tests — offline, fast, koi API key nahi
+```
+
+Tests kya cover karte hain: item parser (Hindi + English), phone number
+detection (Devanagari digits + English digit-words), catalog matching (kabhi
+galat price guess nahi karta), profit report (IST day boundary, udaar,
+unknown-cost), bill image generation, aur optional selling price.
+
+---
+
+## Important files
+
+```
+backend/src/routes/sale.js        saare API endpoints
+backend/src/services/parser.js    text → sale items (offline regex + Gemini)
+backend/src/services/productMatch.js  catalog matching (conservative, no guessing)
+backend/src/services/report.js    daily report (IST) — profit, udaar, low stock
+backend/src/db/db.js              JSON file DB (atomic writes) — data.json
+mobile-app/screens/HomeScreen.js  dashboard
+mobile-app/screens/HandsFreeScreen.js  voice billing flow
+mobile-app/services/api.js        BASE_URL yahan badlo
+```
+
+> ⚠️ **`.env` kabhi commit mat karo** — secrets hain. Already `.gitignore` me hai.
+> `backend/src/db/data.json` (runtime data) bhi git se bahar hai.
+
+---
+
+## Roadmap / status
+
+- ✅ MVP — voice billing, catalog, profit report, customers, share-sheet
+- 🔜 Speaker verification ("voice lock") — roadmap: `docs/SPEAKER_VERIFICATION_ROADMAP.md`
+- 🔜 Production — cloud deploy, multi-shop, real WhatsApp Business API:
+  `docs/PRODUCTION_ROADMAP.md`
