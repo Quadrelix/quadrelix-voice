@@ -7,3 +7,10 @@ backend/generated_bills/*.png
 # Runtime DB — changes on every test run; the default shop skeleton lives in
 # backend/src/db/db.js (defaultData), so a missing file is not lost data.
 backend/src/db/data.json
+
+voice-service/embeddings.json
+voice-service/verify_log.jsonl
+voice-service/pretrained_models/
+voice-service/__pycache__/
+voice-service/.venv/
+*.wav
