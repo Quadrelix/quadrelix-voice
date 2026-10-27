@@ -176,14 +176,56 @@ test("a 10-digit run that can't be an Indian mobile is rejected", () => {
 
 test("no number leaves the sentence byte-for-byte untouched", () => {
   const said = "₹2 की मिर्च, ₹5 का समोसा और ₹10 की भिंडी।";
-  assert.deepStrictEqual(findPhoneNumber(said), { phone: null, rest: said });
+  assert.deepStrictEqual(findPhoneNumber(said), { phone: null, partial: null, rest: said });
 });
 
 test("empty and non-string input don't throw", () => {
-  assert.deepStrictEqual(findPhoneNumber(""), { phone: null, rest: "" });
-  assert.deepStrictEqual(findPhoneNumber("   "), { phone: null, rest: "" });
-  assert.deepStrictEqual(findPhoneNumber(undefined), { phone: null, rest: "" });
-  assert.deepStrictEqual(findPhoneNumber(null), { phone: null, rest: "" });
+  assert.deepStrictEqual(findPhoneNumber(""), { phone: null, partial: null, rest: "" });
+  assert.deepStrictEqual(findPhoneNumber("   "), { phone: null, partial: null, rest: "" });
+  assert.deepStrictEqual(findPhoneNumber(undefined), { phone: null, partial: null, rest: "" });
+  assert.deepStrictEqual(findPhoneNumber(null), { phone: null, partial: null, rest: "" });
+});
+
+// --- Partial dictation ------------------------------------------------------
+// Sarvam sometimes garbles a long dictated number ("छानवे सबन जीरी सात निवारी
+// आठ" is a real transcript) so no 10-digit number survives, but a few digit-
+// words do. The app must KNOW a number was being said so it can ask for a
+// repeat, instead of looking like it ignored the shopkeeper.
+
+test("garbled dictation reports the digits that survived", () => {
+  // Real transcript from a shopkeeper dictating a number in Hindi. Only सात
+  // (7) and आठ (8) came through clean; the rest is Sarvam's mishearing.
+  const r = findPhoneNumber("छानवे सबन जीरी सात निवारी आठ");
+  assert.strictEqual(r.phone, null); // no full number
+  assert.strictEqual(r.partial, "78"); // but the app knows digits were said
+});
+
+test("a partial Hindi digit run reports what came through", () => {
+  const r = findPhoneNumber("नौ आठ सात छह");
+  assert.strictEqual(r.phone, null);
+  assert.strictEqual(r.partial, "9876");
+});
+
+test("two digit-words alone are still a partial, not a number", () => {
+  const r = findPhoneNumber("सात आठ");
+  assert.strictEqual(r.phone, null);
+  assert.strictEqual(r.partial, "78");
+});
+
+test("a single digit is not a partial number", () => {
+  // "2 kilo aam 60 rupaye" — single digit-words are quantities and prices,
+  // every shopkeeper says dozens of them a day. Only a RUN of 2+ digits hints
+  // at a phone number.
+  assert.deepStrictEqual(findPhoneNumber("2 kilo aam 60 rupaye"), {
+    phone: null, partial: null, rest: "2 kilo aam 60 rupaye",
+  });
+  assert.deepStrictEqual(findPhoneNumber("नौ"), { phone: null, partial: null, rest: "नौ" });
+});
+
+test("a full number reports no partial", () => {
+  const r = findPhoneNumber("नौ आठ सात छह पांच चार तीन दो एक शून्य");
+  assert.strictEqual(r.phone, "9876543210");
+  assert.strictEqual(r.partial, null);
 });
 
 // --- What's left over goes to the item parser ------------------------------

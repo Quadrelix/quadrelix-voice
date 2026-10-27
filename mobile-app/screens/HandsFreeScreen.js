@@ -20,6 +20,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useContinuousListening } from '../services/useContinuousListening';
 import { useTapToTalk } from '../services/useTapToTalk';
+import { errorMessage } from '../services/errorMessage';
 import { BASE_URL, transcribeAudio, sendUtterance, finalizeBill, sendBill, getTransaction } from '../services/api';
 import { colors, shadow, shadowStrong } from '../theme';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -43,6 +44,7 @@ export default function HandsFreeScreen() {
   const [detectedPhone, setDetectedPhone] = useState(null);
   const [lastHeard, setLastHeard] = useState('');
   const [parseError, setParseError] = useState(null);
+  const [phoneHint, setPhoneHint] = useState(null); // garbled number — ask for a repeat
   const [sendResult, setSendResult] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
   const [billUrl, setBillUrl] = useState(null); // set when the bill PNG exists but the send failed
@@ -81,8 +83,20 @@ export default function HandsFreeScreen() {
         setItems(data.transaction.items || []);
         setTotal(data.transaction.total_amount || 0);
       }
-      setParseError(data.parse_error ?? null);
+      const parseErr = data.parse_error ?? null;
+      setParseError(parseErr == null ? null : errorMessage(parseErr));
       if (data.detected_phone) setPhoneSafe(data.detected_phone);
+      // Sarvam garbled the dictated number (only some digit-words came
+      // through) — say so, otherwise the shopkeeper has no idea why nothing
+      // happened after they clearly spoke a number.
+      if (!data.detected_phone && data.partial_number) {
+        setPhoneHint(
+          `Number adhura suna (${data.partial_number.length} digits) — dobara boliye, ` +
+          `ek-ek digit alag-alag: "9 8 7 6 5 4 3 2 1 0"`
+        );
+      } else {
+        setPhoneHint(null);
+      }
       if (data.ready_to_send && appStateRef.current === S.LISTENING) {
         startCountdown(data.detected_phone, data.transaction?.transaction_id);
       }
@@ -165,7 +179,7 @@ export default function HandsFreeScreen() {
       setSendResult(result.send_result);
       setStateSafe(S.DONE);
     } catch (err) {
-      const msg = err?.response?.data?.error || err?.message || 'Server se connect nahi hua';
+      const msg = errorMessage(err, 'Server se connect nahi hua');
       console.error('autoSend error:', msg, err);
       setErrorMsg(msg);
       // A failed send is not a failed sale: /finalize saves the phone and renders
@@ -206,7 +220,7 @@ export default function HandsFreeScreen() {
         dialogTitle: 'Bill bhejein — WhatsApp chat chunein',
       });
     } catch (e) {
-      setErrorMsg(e?.message || 'Share nahi khula');
+      setErrorMsg(errorMessage(e, 'Share nahi khula'));
     } finally {
       setSharing(false);
     }
@@ -223,8 +237,7 @@ export default function HandsFreeScreen() {
       setSendResult(result.send_result);
       setStateSafe(S.DONE);
     } catch (err) {
-      const msg = err?.response?.data?.error || err?.message || 'Server se connect nahi hua';
-      setErrorMsg(msg);
+      setErrorMsg(errorMessage(err, 'Server se connect nahi hua'));
       setStateSafe(S.FAILED);
     }
   }
@@ -233,6 +246,7 @@ export default function HandsFreeScreen() {
     clearCountdown();
     setItems([]); setTotal(0); setTxnId(null); setPhoneSafe(null);
     setLastHeard(''); setParseError(null); setSendResult(null); setErrorMsg(null);
+    setPhoneHint(null);
     setBillUrl(null);
     setSecondsLeft(COUNTDOWN_SEC);
     setStateSafe(S.LISTENING);
@@ -362,6 +376,11 @@ export default function HandsFreeScreen() {
       {!!parseError && (
         <Text style={st.parseError} numberOfLines={1}>(Samjha nahi: {parseError})</Text>
       )}
+      {!!phoneHint && (
+        <Text style={st.phoneHint} numberOfLines={2}>
+          {'⚠️'} {phoneHint}
+        </Text>
+      )}
 
       {/* Items list */}
       <FlatList
@@ -451,6 +470,10 @@ const st = StyleSheet.create({
     borderWidth: 1, borderColor: colors.line,
   },
   parseError: { color: colors.orange, fontSize: 12, marginBottom: 6 },
+  phoneHint: {
+    color: '#B45309', fontSize: 13, fontWeight: '700', backgroundColor: colors.orangeSoft,
+    borderRadius: 12, padding: 10, marginBottom: 6, lineHeight: 18,
+  },
 
   list: { flex: 1, marginTop: 10 },
   emptyText: { color: colors.faint, textAlign: 'center', marginTop: 40, fontSize: 14, lineHeight: 24 },

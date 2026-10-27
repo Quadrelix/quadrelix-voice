@@ -233,7 +233,7 @@ router.post("/utterance", async (req, res) => {
     // The number comes out of the sentence before anything else looks at it —
     // left in, a 10-digit run is a quantity, and the bill reads "9876543210
     // Aam".
-    const { phone, rest } = findPhoneNumber(text);
+    const { phone, partial, rest } = findPhoneNumber(text);
 
     let transaction = null;
     if (transaction_id) {
@@ -292,6 +292,10 @@ router.post("/utterance", async (req, res) => {
       filled_price_count: filledPriceCount,
       missing_price_count: missingPriceCount,
       detected_phone: phone,
+      // Sarvam garbled the dictation but some digit-words survived — the app
+      // tells the shopkeeper "number adhura suna, dobara bolo" instead of
+      // looking like it ignored them.
+      partial_number: partial,
       // A number alone isn't enough. An empty bill would send a customer a ₹0
       // receipt, and a missing price would send them a wrong total — in both
       // cases with nobody having pressed anything.

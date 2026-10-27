@@ -106,11 +106,15 @@ function classify(word) {
   if (!clean) return null;
 
   // A literal group of digits, optionally with a country-code plus. "98765" is
-  // five digits towards the run, not one.
-  if (/^\+?\d+$/.test(clean)) return { type: "digits", digits: clean.replace(/\D/g, "") };
+  // five digits towards the run, not one. `spoken: false` marks it as typed
+  // rather than dictated — a price ("60") is a literal run, and must not be
+  // mistaken for the start of a spoken phone number.
+  if (/^\+?\d+$/.test(clean)) {
+    return { type: "digits", digits: clean.replace(/\D/g, ""), spoken: false };
+  }
 
   const lower = clean.toLowerCase();
-  if (DIGIT_WORDS[lower]) return { type: "digits", digits: DIGIT_WORDS[lower] };
+  if (DIGIT_WORDS[lower]) return { type: "digits", digits: DIGIT_WORDS[lower], spoken: true };
   if (REPEAT_WORDS[lower]) return { type: "repeat", times: REPEAT_WORDS[lower] };
   return null;
 }
@@ -162,7 +166,7 @@ function extractFromRun(digits) {
  * input unchanged.
  */
 function findPhoneNumber(text) {
-  if (typeof text !== "string" || !text.trim()) return { phone: null, rest: "" };
+  if (typeof text !== "string" || !text.trim()) return { phone: null, partial: null, rest: "" };
 
   // Split keeping the whitespace, so a sentence with no number rebuilds byte
   // for byte and nothing downstream can tell we looked at it.
@@ -191,13 +195,14 @@ function findPhoneNumber(text) {
     if (info.type === "repeat") {
       // A repeat word only makes sense inside a number being dictated, so it
       // starts a run if one isn't open yet.
-      if (!current) current = { digits: "", from: i, to: i };
+      if (!current) current = { digits: "", from: i, to: i, spoken: true };
       current.to = i;
       pendingRepeat = info.times;
       continue;
     }
 
-    if (!current) current = { digits: "", from: i, to: i };
+    if (!current) current = { digits: "", from: i, to: i, spoken: info.spoken };
+    else current.spoken = current.spoken || info.spoken;
     // "डबल सात" repeats one digit; "डबल 98" is nonsense, so the repeat is
     // dropped rather than applied to the whole group.
     current.digits += pendingRepeat && info.digits.length === 1
@@ -211,7 +216,24 @@ function findPhoneNumber(text) {
   const matches = runs
     .map((run) => ({ run, found: extractFromRun(run.digits) }))
     .filter((m) => m.found);
-  if (!matches.length) return { phone: null, rest: text };
+  if (!matches.length) {
+    // No full 10-digit number, but the shopkeeper may have been dictating one
+    // and Sarvam garbled part of it (a real transcript: "छानवे सबन जीरी सात
+    // निवारी आठ" — only सात and आठ came through clean, and a junk word sits
+    // between them, so they never join into one run). Report the spoken digits
+    // we did catch — concatenated across runs — so the app can say "number
+    // adhura suna, dobara bolo" instead of ignoring what sounded like a number.
+    //
+    // Literal digit runs (prices/quantities like "60", "2 kilo") are marked
+    // spoken:false and deliberately excluded: every sale says numbers, but only
+    // a dictation uses digit-WORDS. 2+ spoken digits is the line.
+    const spokenDigits = runs
+      .filter((r) => r.spoken)
+      .map((r) => r.digits)
+      .join("");
+    const partial = spokenDigits.length >= 2 ? spokenDigits.slice(0, 14) : null;
+    return { phone: null, partial, rest: text };
+  }
 
   // Later wins. If the shopkeeper corrects themselves — "9876543210, nahi nahi,
   // 9123456780" — the second number is the one they meant. Both still get cut
@@ -257,7 +279,7 @@ function findPhoneNumber(text) {
     .replace(/^[\s,.।]+|[\s,.।]+$/g, "")
     .trim();
 
-  return { phone, rest };
+  return { phone, partial: null, rest };
 }
 
 module.exports = { findPhoneNumber };
