@@ -126,6 +126,59 @@ export async function dailyReport(date) {
   return res.data;
 }
 
+// --- Voice Lock (speaker verification) --------------------------------------
+// The gate runs on the backend (it calls the Python service on localhost), so
+// the app just uses this instead of transcribeAudio for the billing flow.
+// A rejected clip comes back as { text: "", speaker_verified: false, reason } —
+// the same shape as "nobody said anything", which is how a customer's voice
+// should feel.
+
+export async function verifyAndTranscribeAudio(fileUri) {
+  const formData = new FormData();
+  formData.append("audio", {
+    uri: fileUri,
+    name: "recording.m4a",
+    type: "audio/m4a",
+  });
+
+  const res = await api.post("/api/verify-and-transcribe", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 20000, // verify (~0.9s) + Sarvam (~1-2s), with slack
+  });
+  return res.data; // { text, speaker_verified, reason?, lock_state }
+}
+
+export async function enrollVoice(fileUri) {
+  const formData = new FormData();
+  formData.append("audio", {
+    uri: fileUri,
+    name: "enroll.m4a",
+    type: "audio/m4a",
+  });
+
+  const res = await api.post("/api/enroll-voice", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 40000,
+  });
+  return res.data; // { speaker_id, embedding_stored, samples, similarity_mean }
+}
+
+export async function getVoiceStatus() {
+  const res = await api.get("/api/voice-status");
+  return res.data; // { enrolled, samples, mode, service_up }
+}
+
+export async function resetVoice(pin) {
+  const res = await api.post("/api/voice-reset", { pin });
+  return res.data;
+}
+
+// Temporary on/off switch for a bad day (in-memory on the server).
+export async function setVoiceOverride(mode, pin) {
+  const res = await api.post("/api/voice-override", { mode, pin });
+  return res.data;
+}
+
 // --- Home dashboard ---------------------------------------------------------
 // The home screen answers "aaj kaisa chal raha hai?" in one glance, so it
 // needs the shop's name, the last few bills and the customer list — all

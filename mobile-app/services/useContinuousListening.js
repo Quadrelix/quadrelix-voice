@@ -21,27 +21,11 @@ import { errorMessage } from "./errorMessage";
 import {
   useAudioRecorder,
   AudioModule,
-  RecordingPresets,
   setAudioModeAsync,
 } from "expo-audio";
-
-// RecordingPresets.HIGH_QUALITY does NOT enable metering, and without metering
-// there is no way to tell speech from silence — the whole loop below degrades to
-// fixed-length chunks. Spreading the preset and adding the flag is the only way
-// to get it.
-//
-// android.audioSource: 'voice_recognition' routes the mic through Android's
-// noise-suppression + beamforming stack (the same path Google Assistant uses),
-// so a loud counter and background music arrive attenuated and the shopkeeper's
-// voice dominant. See useTapToTalk.js for the noisy-shop reasoning.
-const RECORDING_OPTIONS = {
-  ...RecordingPresets.HIGH_QUALITY,
-  isMeteringEnabled: true,
-  android: {
-    ...RecordingPresets.HIGH_QUALITY.android,
-    audioSource: 'voice_recognition',
-  },
-};
+// Same options as tap mode and enrollment — Voice Lock compares live audio
+// against a profile recorded with this exact pipeline.
+import { RECORDING_OPTIONS } from "./recordingOptions";
 
 // ---------------------------------------------------------------------------
 // Tuning. Start here if the app cuts you off mid-sentence (raise SILENCE_CUT_MS)

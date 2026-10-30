@@ -15,26 +15,12 @@ import { errorMessage } from "./errorMessage";
 import {
   useAudioRecorder,
   AudioModule,
-  RecordingPresets,
   setAudioModeAsync,
 } from "expo-audio";
+import { RECORDING_OPTIONS } from "./recordingOptions";
 
-// HIGH_QUALITY alone does not enable metering, and metering is how we know the
-// shopkeeper has stopped talking. Same shape as useContinuousListening.
-//
-// android.audioSource: 'voice_recognition' tells Android this mic stream feeds
-// speech recognition, and phones apply their noise-suppression + beamforming
-// stack to it — background music and shop chatter get attenuated by the device
-// itself, before Sarvam ever hears the file. This is the real lever for noisy
-// shops; the VAD thresholds above can't remove noise that's already recorded.
-const RECORDING_OPTIONS = {
-  ...RecordingPresets.HIGH_QUALITY,
-  isMeteringEnabled: true,
-  android: {
-    ...RecordingPresets.HIGH_QUALITY.android,
-    audioSource: 'voice_recognition',
-  },
-};
+// The options live in recordingOptions.js because enrollment and continuous
+// listening must use the SAME pipeline — Voice Lock compares across them.
 
 const POLL_MS = 200;
 const BASELINE_MS = 600; // learn the room's floor in the pause before speech

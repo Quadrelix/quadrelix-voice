@@ -6,6 +6,7 @@ const path = require("path");
 const db = require("./db/db");
 const saleRoutes = require("./routes/sale");
 const { checkWhatsAppConfig } = require("./services/whatsapp");
+const voice = require("./services/voiceVerify");
 
 const app = express();
 app.use(cors());
@@ -33,6 +34,14 @@ db.init().then(() => {
   } else if (!process.env.WHATSAPP_PROVIDER) {
     console.log("[WHATSAPP] Simulated mode — sends will be logged, not delivered.");
   }
+
+  // Voice Lock status, following the WhatsApp pattern: log the mode and
+  // whether the Python service answered, so a misconfigured lock is visible
+  // at boot instead of surfacing mid-sale.
+  voice
+    .voiceBootSummary()
+    .then(({ line }) => console.log(line))
+    .catch(() => console.log("[VOICE LOCK] status check failed"));
 
   app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);

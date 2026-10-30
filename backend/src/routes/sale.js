@@ -13,6 +13,7 @@ const { findPhoneNumber } = require("../services/phoneNumber");
 const { hasItemContent, matchPriceFill } = require("../services/utterance");
 const { autoFillPrices } = require("../services/productMatch");
 const { dailyReport, toISTDate } = require("../services/report");
+const voice = require("../services/voiceVerify");
 
 const DEFAULT_SHOP_ID = "shop_1"; // MVP: single shop, hardcoded
 
@@ -550,6 +551,184 @@ router.get("/customers", async (req, res) => {
     (a, b) => new Date(b.last_purchase) - new Date(a.last_purchase)
   );
   res.json({ customers });
+});
+
+// --- Voice Lock --------------------------------------------------------------
+// Speaker verification lives in the Python service (voice-service/, port 8000).
+// The phone never talks to it — only this backend does — so port 8000 never has
+// to be reachable over Wi-Fi and the service can bind to 127.0.0.1.
+//
+// Why a separate /verify-and-transcribe and not a change to /transcribe: the
+// typed fallback screens still use /transcribe and must never be gated. Same
+// additive-route pattern the hands-free flow followed.
+
+/**
+ * Verify the clip, then transcribe it only if the owner is speaking.
+ * Same multipart upload as /api/transcribe (field name: "audio").
+ *
+ * A rejection is HTTP 200 with empty text — to the app it looks like silence,
+ * which is exactly how a customer talking should feel. It is not an error.
+ */
+router.post("/verify-and-transcribe", upload.single("audio"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "audio file required" });
+  try {
+    const gate = await runVoiceGate(req.file.path);
+
+    if (!gate.allow) {
+      fs.unlink(req.file.path, () => {});
+      return res.json({
+        text: "",
+        speaker_verified: false,
+        reason: gate.reason,
+        lock_state: gate.lockState,
+      });
+    }
+
+    // No speech in the clip is not a failure — the owner said nothing, or the
+// clip was music/noise. Return empty text exactly like a rejected clip, so
+// the app treats both as "nothing to bill".
+    let text = "";
+    try {
+      text = (await transcribeAudio(req.file.path)) || "";
+    } catch (e) {
+      if (!/did not return a transcript/i.test(e.message)) throw e;
+    }
+    fs.unlink(req.file.path, () => {});
+    return res.json({
+      text,
+      speaker_verified: gate.verified,
+      lock_state: gate.lockState,
+    });
+  } catch (err) {
+    fs.unlink(req.file.path, () => {});
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+// Verify + decide, with the service error folded into the fail mode.
+async function runVoiceGate(audioPath) {
+  const mode = voice.mode();
+  const failMode = voice.failMode();
+  if (mode === "off") {
+    return voice.decide({ mode: "off", failMode });
+  }
+
+  let result = null;
+  let error = null;
+  try {
+    result = await voice.verifySpeaker(audioPath);
+    if (result.status === "not_enrolled") {
+      // No profile yet: shadow mode must not block a shop that hasn't enrolled;
+      // enforce mode treats it as "not the owner".
+      result = { is_speaker: false, score: 0, reason: "not_enrolled" };
+    }
+  } catch (e) {
+    console.error("[VOICE LOCK] verify failed:", e.message);
+    error = e;
+  }
+  return voice.decide({ mode, result, error, failMode });
+}
+
+/**
+ * One enrollment clip. body: multipart "audio".
+ * Once enrolled, further calls are REFUSED unless the profile was reset first
+ * with the admin PIN — otherwise anything on the network could overwrite the
+ * owner's voice lock.
+ */
+// Keep in sync with VoiceEnrollScreen's five sentences.
+const ENROLL_TARGET_CLIPS = 5;
+
+router.post("/enroll-voice", upload.single("audio"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "audio file required" });
+  try {
+    // Enrollment completes after ENROLL_TARGET_CLIPS clips. Until then more
+    // clips are the normal flow; after that, a new voice can only replace the
+    // profile through the PIN-gated reset — otherwise anyone on the network
+    // could overwrite the owner's voice lock.
+    const status = await voice.getVoiceStatus().catch(() => null);
+    if (status?.enrolled && (status.samples || 0) >= ENROLL_TARGET_CLIPS) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(409).json({
+        error: "Voice already registered. Re-enroll se pehle Voice Lock reset karein.",
+        code: "already_enrolled",
+      });
+    }
+
+    const result = await voice.enrollSample(req.file.path);
+    fs.unlink(req.file.path, () => {});
+
+    if (!result.ok) {
+      return res.status(result.quality_rejected ? 422 : 400).json({
+        error: result.error,
+        quality_rejected: Boolean(result.quality_rejected),
+      });
+    }
+    return res.json(result);
+  } catch (err) {
+    fs.unlink(req.file.path, () => {});
+    return res.status(400).json({ error: "Voice service se connect nahi hua: " + err.message });
+  }
+});
+
+/**
+ * What the app shows on the voice screen: enrolled? mode? service up?
+ */
+router.get("/voice-status", async (req, res) => {
+  try {
+    const status = await voice.getVoiceStatus();
+    res.json(status);
+  } catch (err) {
+    res.json({
+      enrolled: false,
+      samples: 0,
+      mode: voice.mode(),
+      service_up: false,
+      error: err.message,
+    });
+  }
+});
+
+/**
+ * Delete the stored voice profile. Requires the admin PIN so a stranger
+ * holding the phone (or on the network) can't quietly re-enroll their voice.
+ */
+router.post("/voice-reset", async (req, res) => {
+  const pin = process.env.VOICE_ADMIN_PIN;
+  if (!pin) {
+    return res.status(503).json({ error: "VOICE_ADMIN_PIN not set in .env — reset disabled" });
+  }
+  if (String(req.body?.pin || "") !== pin) {
+    return res.status(403).json({ error: "Ghalat PIN" });
+  }
+  try {
+    const result = await voice.resetVoice();
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * The third safety valve (PDF T7.4): an in-memory override so the owner can
+ * switch the lock off for a bad day without editing .env and restarting.
+ * Not persisted — a restart returns to the .env value on purpose.
+ */
+router.post("/voice-override", (req, res) => {
+  const pin = process.env.VOICE_ADMIN_PIN;
+  if (pin && String(req.body?.pin || "") !== pin) {
+    return res.status(403).json({ error: "Ghalat PIN" });
+  }
+  const value = String(req.body?.mode || "").toLowerCase();
+  if (value === "off" || value === "shadow" || value === "enforce") {
+    voice.setOverride(value);
+    console.log(`[VOICE LOCK] runtime override -> ${value}`);
+    return res.json({ mode: value, override: true });
+  }
+  if (value === "clear") {
+    voice.setOverride(null);
+    return res.json({ mode: voice.mode(), override: false });
+  }
+  res.status(400).json({ error: "mode must be off | shadow | enforce | clear" });
 });
 
 /**

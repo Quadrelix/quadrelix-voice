@@ -1,5 +1,9 @@
 # Speaker Verification ("Voice Lock") — Build Roadmap
 
+> **STATUS (2026-10-30): implemented through M5 on `voice-lock-integration`.**
+> M2/M6 (real-voice threshold tuning) still need shop recordings. Decisions
+> taken are recorded in §12 below; the runbook is in §13.
+
 **Goal:** The app should only transcribe the shop owner's voice. If a customer, a
 family member, or a TV/radio speaks, the app must ignore it — even while the
 owner is speaking, any other voice should not reach the billing pipeline.
@@ -319,3 +323,59 @@ All in `backend/src/`:
 **Read order for the teammate:** §1 → §2 → §4 → §5 → your Phase (§8) → §10.
 Everything else is reference. Ask the project owner for: laptop access, the
 Twilio/Sarvam `.env` (already configured), and a week of shop audio for Phase 5.
+
+---
+
+## 12. Decisions taken (D1–D5) — 2026-10-30
+
+| # | Decision | Answer implemented |
+|---|---|---|
+| D1 | Voice service down | **Fail open** (`VOICE_FAIL_MODE=open`). Audio is allowed, Node logs `[VOICE LOCK] service unreachable — failing OPEN`, the app shows a "Voice Lock off" badge. Switchable to `closed`. |
+| D2 | Clips shorter than 1.5 s | **Reject** with `reason: "too_short"` when enforcing; allowed (and logged) in shadow so the collected data matches today's behaviour. Re-check in M6. |
+| D3 | Gate the typed fallback screens | **No.** `RecordSaleScreen` / `ConfirmContactScreen` keep using the ungated `/api/transcribe`. They are the escape hatch. |
+| D4 | Customer talks while owner speaks | **Accepted risk** in v1. One embedding per clip cannot separate overlapping voices; enrollment asks for two clips in the shop's normal noise so the profile is realistic. Measure in M6. |
+| D5 | Verify then Sarvam, or parallel | **Sequential.** The gate runs first so a stranger's audio never leaves the shop. Costs ~0.6–0.9 s. |
+
+## 13. Runbook — "Voice Lock misbehaves"
+
+1. **Bad day / lock rejecting the owner** — set `VOICE_LOCK_MODE=off` in
+   `backend/.env` and restart the backend, **or** call
+   `POST /api/voice-override { "mode": "off", "pin": "<VOICE_ADMIN_PIN>" }`
+   (in-memory; a restart returns to the `.env` value).
+2. **Python service crashed** — billing continues (fail-open). The app shows
+   "Voice Lock off". Restart it with `start-all.cmd`, or
+   `cd voice-service && .venv\Scripts\python -m uvicorn main:app --host 127.0.0.1 --port 8000`.
+3. **Need to re-enroll** — app → Home → Voice Lock card → "Awaaz dobara
+   register karein" → admin PIN. This deletes the stored vectors.
+4. **Threshold tuning** — `voice-service/verify_log.jsonl` has one JSON line
+   per verify (score, threshold, duration, decision). Never contains audio.
+
+### Privacy note
+The stored embedding (`voice-service/embeddings.json`) is **biometric data**.
+It is git-ignored, stays on the shop's laptop, and is deleted by the
+reset flow on request.
+
+### Environment variables
+
+| Variable | Where | Default | Meaning |
+|---|---|---|---|
+| `VOICE_SERVICE_URL` | backend `.env` | `http://127.0.0.1:8000` | Where Node reaches Python |
+| `VOICE_SERVICE_TOKEN` | backend + service | none | Shared secret (`X-Voice-Token`) |
+| `VOICE_LOCK_MODE` | backend `.env` | `off` | `off` / `shadow` / `enforce` |
+| `VOICE_FAIL_MODE` | backend `.env` | `open` | Behaviour when the service is down |
+| `VOICE_ADMIN_PIN` | backend `.env` | none | Needed for reset / override |
+| `VOICE_THRESHOLD` | service env | `0.30` | Cosine-similarity cut-off |
+| `VOICE_MIN_SECONDS` | service env | `1.5` | Shortest clip that is scored |
+
+### Architecture as built
+
+```
+Phone (Expo) --m4a--> Node :3000 /api/verify-and-transcribe
+                          |  1. POST audio -> Python 127.0.0.1:8000 /verify  (shared token)
+                          |  2. decide(mode, result, failure policy)
+                          |  3. only if allowed -> Sarvam STT -> { text, speaker_verified }
+                          v
+              phone onSegment -> /api/utterance (unchanged)
+```
+
+The phone never reaches port 8000 — no firewall or hotspot exposure.

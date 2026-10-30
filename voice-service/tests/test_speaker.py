@@ -97,13 +97,20 @@ def client():
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _clean_store():
-    """Wipe any leftover test embeddings before and after the module."""
-    if store.STORE_PATH.exists():
-        store.STORE_PATH.unlink()
+def _clean_store(tmp_path_factory):
+    """
+    Point the store at a throwaway directory for this module.
+
+    NEVER delete the real embeddings.json: it is the owner's voice profile,
+    and deleting it means re-enrolling. The fixture used to unlink
+    store.STORE_PATH directly, which would wipe a real enrollment whenever
+    someone ran the tests on the shop laptop.
+    """
+    temp_dir = tmp_path_factory.mktemp("voice-store")
+    original = store.STORE_PATH
+    store.STORE_PATH = temp_dir / "embeddings.json"
     yield
-    if store.STORE_PATH.exists():
-        store.STORE_PATH.unlink()
+    store.STORE_PATH = original
 
 
 # ---------------------------------------------------------------------------
@@ -136,11 +143,19 @@ class TestSpeakerVerificationPipeline:
                 assert body["speaker_id"] == SPEAKER_ID
                 assert body["embedding_stored"] is True
                 assert body["samples"] == i
-                assert isinstance(body["similarity_mean"], float)
+                # First clip has nothing to compare against (the old code
+                # compared it to a mean that already contained it — a
+                # self-inflated 0.99). From the second clip on it is a real
+                # similarity to the OTHER clips.
+                if i == 1:
+                    assert body["similarity_mean"] is None
+                else:
+                    assert isinstance(body["similarity_mean"], float)
 
+                sim = body["similarity_mean"]
                 print(
                     f"  enroll #{i}: samples={body['samples']}  "
-                    f"similarity_mean={body['similarity_mean']:.4f}"
+                    f"similarity_mean={'n/a' if sim is None else f'{sim:.4f}'}"
                 )
             finally:
                 os.unlink(wav)

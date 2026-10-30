@@ -25,10 +25,11 @@
 |---|---|---|---|
 | **0** | Setup & environment | ✅ DONE | 2026-10-23 |
 | **1** | Core service (speaker.py / store.py / main.py) | ✅ DONE | 2026-10-26 |
-| **2** | Node backend integration | ⬜ Next | — |
-| **3** | App enrollment UI | ⬜ Pending | — |
-| **4** | Live gate | ⬜ Pending | — |
-| **5** | Tuning & robustness | ⬜ Pending | — |
+| **1b** | Hardening (token, atomic store, quality check, log) | ✅ DONE | 2026-10-30 |
+| **2** | Node backend integration | ✅ DONE | 2026-10-30 |
+| **3** | App enrollment UI | ✅ DONE | 2026-10-30 |
+| **4** | Live gate | ✅ DONE | 2026-10-30 |
+| **5** | Tuning & robustness | ⬜ Needs real shop recordings | — |
 | **6** | On-device (optional) | ⬜ Later | — |
 
 ---
