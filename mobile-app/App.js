@@ -10,8 +10,8 @@
 // The tab bar is custom (not the default component) so the mic can sit
 // raised in the middle, the way the design calls for.
 
-import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -27,6 +27,8 @@ import RecordSaleScreen from './screens/RecordSaleScreen';
 import ConfirmContactScreen from './screens/ConfirmContactScreen';
 import BillPreviewScreen from './screens/BillPreviewScreen';
 import VoiceEnrollScreen from './screens/VoiceEnrollScreen';
+import ShopSelectScreen from './screens/ShopSelectScreen';
+import { getActiveShop } from './services/shop';
 import { colors, shadow } from './theme';
 
 const Stack = createNativeStackNavigator();
@@ -101,6 +103,31 @@ function Tabs() {
 }
 
 export default function App() {
+  // Shop gate. undefined = still reading storage, null = no shop yet.
+  const [shop, setShop] = useState(undefined);
+
+  useEffect(() => {
+    getActiveShop().then(setShop);
+  }, []);
+
+  // Reading AsyncStorage takes a few milliseconds; showing the chooser first
+  // would make an enrolled phone flash the code screen on every launch.
+  if (shop === undefined) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg }}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
+
+  if (!shop) {
+    return (
+      <SafeAreaProvider>
+        <ShopSelectScreen onDone={setShop} />
+      </SafeAreaProvider>
+    );
+  }
+
   return (
     <SafeAreaProvider>
       <NavigationContainer>

@@ -1,4 +1,5 @@
 import axios from "axios";
+import { getActiveShop } from "./shop";
 
 // TODO: change this to your backend's actual address.
 // - Android emulator talking to a backend on your laptop -> "http://10.0.2.2:3000"
@@ -7,9 +8,24 @@ import axios from "axios";
 //
 // Exported because screens need it to build image URLs — keep it defined here
 // only, so there's one place to change when your laptop's IP moves.
-export const BASE_URL = "http://10.157.20.161:3000";
+// The pilot backend runs on Render, so the phone no longer depends on the
+// laptop, its Wi-Fi IP, or ngrok. To point the app back at a laptop during
+// development, change this one line (e.g. "http://192.168.1.5:3000").
+export const BASE_URL = "https://quadrelix-voice-backend.onrender.com";
 
 const api = axios.create({ baseURL: BASE_URL });
+
+// Every shop-scoped call carries the shop code. The backend resolves it to a
+// shop id; without it a request would land in the wrong shop (or in the
+// legacy demo shop), which is exactly the bug multi-shop exists to prevent.
+api.interceptors.request.use(async (config) => {
+  const shop = await getActiveShop();
+  if (shop?.shop_code) {
+    config.headers = config.headers || {};
+    config.headers["X-Shop-Code"] = shop.shop_code;
+  }
+  return config;
+});
 
 export async function transcribeAudio(fileUri) {
   const formData = new FormData();
@@ -187,6 +203,16 @@ export async function setVoiceOverride(mode, pin) {
 export async function getShop() {
   const res = await api.get("/api/shop");
   return res.data; // { shop: { shop_id, shop_name, upi_id, owner_phone } }
+}
+
+// Validate a shop code the owner just typed, BEFORE it is stored. Sends the
+// code explicitly rather than relying on the interceptor, because at this
+// moment no shop is active yet.
+export async function lookupShopByCode(shopCode) {
+  const res = await api.get("/api/shop", {
+    headers: { "X-Shop-Code": shopCode },
+  });
+  return res.data.shop;
 }
 
 export async function recentTransactions(limit = 5) {
