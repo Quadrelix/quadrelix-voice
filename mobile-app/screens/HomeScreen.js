@@ -13,6 +13,7 @@ import React, { useCallback, useState } from 'react';
 import { errorMessage } from '../services/errorMessage';
 import {
   ActivityIndicator,
+  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -29,6 +30,8 @@ import {
   recentTransactions,
   getVoiceStatus,
 } from '../services/api';
+import { clearActiveShop } from '../services/shop';
+import * as Updates from 'expo-updates';
 import { colors, shadow, shadowStrong, money } from '../theme';
 
 const QUICK_ACTIONS = [
@@ -90,6 +93,27 @@ export default function HomeScreen() {
     load({ silent: true });
   };
 
+  // Switching shops clears the stored code and restarts the app. Reloading is
+  // deliberate: every screen holds numbers for the OLD shop, and re-mounting
+  // is the one way to guarantee none of them survive the switch.
+  const switchShop = () => {
+    Alert.alert(
+      'Dukaan badalni hai?',
+      `${shopName} ka data band ho jayega aur naya code maanga jayega.`,
+      [
+        { text: 'Nahi', style: 'cancel' },
+        {
+          text: 'Haan, badlo',
+          style: 'destructive',
+          onPress: async () => {
+            await clearActiveShop();
+            Updates.reloadAsync().catch(() => {});
+          },
+        },
+      ]
+    );
+  };
+
   const goSale = () => navigation.navigate('HandsFree');
   const onQuick = (key) => {
     if (key === 'sale') return goSale();
@@ -132,7 +156,7 @@ export default function HomeScreen() {
               </View>
             )}
           </TouchableOpacity>
-          <TouchableOpacity style={s.shopChip} onPress={() => navigation.navigate('Products')}>
+          <TouchableOpacity style={s.shopChip} onPress={switchShop}>
             <View style={s.shopAvatar}>
               <Text style={s.shopAvatarText}>{initials || 'S'}</Text>
             </View>
