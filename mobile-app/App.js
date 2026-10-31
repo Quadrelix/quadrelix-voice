@@ -10,7 +10,7 @@
 // The tab bar is custom (not the default component) so the mic can sit
 // raised in the middle, the way the design calls for.
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -28,7 +28,7 @@ import ConfirmContactScreen from './screens/ConfirmContactScreen';
 import BillPreviewScreen from './screens/BillPreviewScreen';
 import VoiceEnrollScreen from './screens/VoiceEnrollScreen';
 import ShopSelectScreen from './screens/ShopSelectScreen';
-import { getActiveShop } from './services/shop';
+import { ShopProvider, useShop } from './services/ShopContext';
 import { colors, shadow } from './theme';
 
 const Stack = createNativeStackNavigator();
@@ -102,17 +102,12 @@ function Tabs() {
   );
 }
 
-export default function App() {
-  // Shop gate. undefined = still reading storage, null = no shop yet.
-  const [shop, setShop] = useState(undefined);
-
-  useEffect(() => {
-    getActiveShop().then(setShop);
-  }, []);
+function ShopGate() {
+  const { shop, ready, chooseShop } = useShop();
 
   // Reading AsyncStorage takes a few milliseconds; showing the chooser first
   // would make an enrolled phone flash the code screen on every launch.
-  if (shop === undefined) {
+  if (!ready) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg }}>
         <ActivityIndicator color={colors.primary} />
@@ -120,31 +115,33 @@ export default function App() {
     );
   }
 
-  if (!shop) {
-    return (
-      <SafeAreaProvider>
-        <ShopSelectScreen onDone={setShop} />
-      </SafeAreaProvider>
-    );
-  }
+  if (!shop) return <ShopSelectScreen onDone={chooseShop} />;
 
   return (
+    <NavigationContainer>
+      {/*
+        RecordSale / ConfirmContact / BillPreview are the typed fallback flow —
+        kept reachable from the stack if the voice path ever needs a manual
+        escape hatch.
+      */}
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="Tabs" component={Tabs} />
+        <Stack.Screen name="HandsFree" component={HandsFreeScreen} />
+        <Stack.Screen name="RecordSale" component={RecordSaleScreen} />
+        <Stack.Screen name="ConfirmContact" component={ConfirmContactScreen} />
+        <Stack.Screen name="BillPreview" component={BillPreviewScreen} />
+        <Stack.Screen name="VoiceEnroll" component={VoiceEnrollScreen} />
+      </Stack.Navigator>
+    </NavigationContainer>
+  );
+}
+
+export default function App() {
+  return (
     <SafeAreaProvider>
-      <NavigationContainer>
-        {/*
-          RecordSale / ConfirmContact / BillPreview are the typed fallback flow —
-          kept reachable from the stack if the voice path ever needs a manual
-          escape hatch.
-        */}
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="Tabs" component={Tabs} />
-          <Stack.Screen name="HandsFree" component={HandsFreeScreen} />
-          <Stack.Screen name="RecordSale" component={RecordSaleScreen} />
-          <Stack.Screen name="ConfirmContact" component={ConfirmContactScreen} />
-          <Stack.Screen name="BillPreview" component={BillPreviewScreen} />
-          <Stack.Screen name="VoiceEnroll" component={VoiceEnrollScreen} />
-        </Stack.Navigator>
-      </NavigationContainer>
+      <ShopProvider>
+        <ShopGate />
+      </ShopProvider>
     </SafeAreaProvider>
   );
 }
