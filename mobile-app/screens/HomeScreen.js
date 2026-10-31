@@ -27,6 +27,7 @@ import {
   getShop,
   dailyReport,
   recentTransactions,
+  getVoiceStatus,
 } from '../services/api';
 import { colors, shadow, shadowStrong, money } from '../theme';
 
@@ -48,6 +49,7 @@ export default function HomeScreen() {
   const [shop, setShop] = useState(null);
   const [report, setReport] = useState(null);
   const [recent, setRecent] = useState([]);
+  const [voice, setVoice] = useState(null); // Voice Lock status (enrolled? mode?)
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
@@ -64,6 +66,11 @@ export default function HomeScreen() {
       setShop(shopData.shop);
       setReport(reportData);
       setRecent(recentData.transactions || []);
+      // Voice Lock lives on its own endpoint and must never make the whole
+      // dashboard fail to load (the Python service may simply be off).
+      getVoiceStatus()
+        .then((v) => setVoice(v))
+        .catch(() => setVoice(null));
     } catch (e) {
       setError(errorMessage(e, 'Server se connect nahi hua'));
     } finally {
@@ -201,6 +208,43 @@ export default function HomeScreen() {
             </TouchableOpacity>
           ))}
         </View>
+
+        {/* ── Voice Lock ───────────────────────────────────────────────── */}
+        {/* Only shown when the lock is in use or still needs setup. In the
+            default "off" mode this card would just be noise on a dashboard
+            the shopkeeper sees fifty times a day. */}
+        {!!voice && (voice.mode !== 'off' || !voice.enrolled) && (
+          <TouchableOpacity
+            style={s.voiceCard}
+            onPress={() => navigation.navigate('VoiceEnroll')}
+            activeOpacity={0.85}
+          >
+            <View style={[
+              s.voiceIcon,
+              { backgroundColor: voice.enrolled ? colors.greenSoft : colors.orangeSoft },
+            ]}>
+              <Ionicons
+                name={voice.enrolled ? 'shield-checkmark' : 'shield-outline'}
+                size={20}
+                color={voice.enrolled ? colors.green : colors.orange}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.voiceTitle}>
+                {voice.enrolled ? 'Voice Lock on' : 'Voice Lock: set up'}
+              </Text>
+              <Text style={s.voiceSub} numberOfLines={1}>
+                {voice.enrolled
+                  ? `${voice.samples || 0} clips registered · sirf aapki awaaz`
+                  : 'Apni awaaz register karein — 5 chhote clips'}
+              </Text>
+            </View>
+            {!voice.service_up && voice.mode !== 'off' && (
+              <Text style={s.voiceOffBadge}>Lock off</Text>
+            )}
+            <Ionicons name="chevron-forward" size={18} color={colors.faint} />
+          </TouchableOpacity>
+        )}
 
         {/* ── Today's summary ──────────────────────────────────────────── */}
         <View style={s.sectionHead}>
@@ -397,6 +441,21 @@ const s = StyleSheet.create({
   viewMoreText: { color: colors.primary, fontSize: 12.5, fontWeight: '700', marginRight: 3 },
 
   quickGrid: { flexDirection: 'row', gap: 10 },
+
+  voiceCard: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card,
+    borderRadius: 16, padding: 13, marginTop: 12, ...shadow,
+  },
+  voiceIcon: {
+    width: 40, height: 40, borderRadius: 12, alignItems: 'center',
+    justifyContent: 'center', marginRight: 11,
+  },
+  voiceTitle: { fontSize: 13.5, fontWeight: '800', color: colors.text },
+  voiceSub: { fontSize: 11.5, color: colors.sub, marginTop: 2 },
+  voiceOffBadge: {
+    fontSize: 10, fontWeight: '800', color: colors.orange, backgroundColor: colors.orangeSoft,
+    borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, marginRight: 6,
+  },
   quickCard: {
     flex: 1, backgroundColor: colors.card, borderRadius: 16, paddingVertical: 13,
     paddingHorizontal: 6, alignItems: 'center', ...shadow,

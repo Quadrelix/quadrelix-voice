@@ -14,3 +14,8 @@ voice-service/pretrained_models/
 voice-service/__pycache__/
 voice-service/.venv/
 *.wav
+
+voice-service/clips/
+voice-service/.pytest_cache/
+voice-service/tests/__pycache__/
+backend/uploads/

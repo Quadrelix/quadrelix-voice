@@ -91,6 +91,51 @@ Apna laptop IP nikalne ke liye:
 
 ---
 
+## Voice Lock (speaker verification)
+
+Only the shop owner's voice should reach billing. A customer, family member,
+TV or radio must never add an item, a price, or a phone number.
+
+**How it works:** the owner records 5 short clips once (app → Home → Voice Lock
+card). The Python `voice-service/` turns each clip into a 192-dim voice
+fingerprint (SpeechBrain ECAPA-TDNN). Every billing utterance is fingerprinted
+the same way and compared with the owner's profile — below the threshold, the
+clip is dropped before it ever reaches Sarvam.
+
+```
+phone → Node :3000 → Python :8000 (verify) → Sarvam STT
+```
+
+The phone never talks to port 8000; only the backend does.
+
+**Run it:** `start-all.cmd` at the repo root starts the voice service, the
+backend and (if configured) ngrok. First-time Python setup:
+
+```bash
+cd voice-service
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+```
+
+**Modes** (`backend/.env` → `VOICE_LOCK_MODE`):
+
+| Mode | Behaviour |
+|---|---|
+| `off` (default) | Exactly like before — everything is transcribed |
+| `shadow` | Verifies and logs every score, never blocks — use this for a week of real data |
+| `enforce` | Blocks audio that isn't the owner |
+
+Also needed in `backend/.env`: `VOICE_SERVICE_TOKEN` (same value in the
+service's environment) and `VOICE_ADMIN_PIN` (reset / re-enroll).
+If the voice service is down, billing keeps working (fail-open) and the app
+shows a "Voice Lock off" badge. Full runbook:
+[docs/SPEAKER_VERIFICATION_ROADMAP.md](docs/SPEAKER_VERIFICATION_ROADMAP.md).
+
+> ⚠️ `voice-service/embeddings.json` is biometric data. It is git-ignored and
+> must never be committed or shared.
+
+---
+
 ## Backend API (test ke liye handy)
 
 ```bash

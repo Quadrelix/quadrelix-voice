@@ -26,6 +26,7 @@ import HandsFreeScreen from './screens/HandsFreeScreen';
 import RecordSaleScreen from './screens/RecordSaleScreen';
 import ConfirmContactScreen from './screens/ConfirmContactScreen';
 import BillPreviewScreen from './screens/BillPreviewScreen';
+import VoiceEnrollScreen from './screens/VoiceEnrollScreen';
 import { colors, shadow } from './theme';
 
 const Stack = createNativeStackNavigator();
@@ -114,6 +115,7 @@ export default function App() {
           <Stack.Screen name="RecordSale" component={RecordSaleScreen} />
           <Stack.Screen name="ConfirmContact" component={ConfirmContactScreen} />
           <Stack.Screen name="BillPreview" component={BillPreviewScreen} />
+          <Stack.Screen name="VoiceEnroll" component={VoiceEnrollScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

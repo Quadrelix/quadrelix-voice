@@ -13,8 +13,65 @@ const { findPhoneNumber } = require("../services/phoneNumber");
 const { hasItemContent, matchPriceFill } = require("../services/utterance");
 const { autoFillPrices } = require("../services/productMatch");
 const { dailyReport, toISTDate } = require("../services/report");
+const voice = require("../services/voiceVerify");
 
-const DEFAULT_SHOP_ID = "shop_1"; // MVP: single shop, hardcoded
+// ---------------------------------------------------------------------------
+// Shop resolution
+// ---------------------------------------------------------------------------
+// Every command a shop makes arrives with its shop code. The code is what the
+// owner typed once in the app; it is NOT a secret (it selects a shop, it does
+// not authorise an account) — the pilot relies on stores being physical, not
+// on the code being unguessable. Admin routes are the ones behind a token.
+//
+// Resolution order:
+//   1. X-Shop-Code header   — the app's normal path
+//   2. ?shop_code=          — curl / debugging
+//   3. ?shop_id= with a valid ADMIN_TOKEN — admin tooling
+//
+// Transactions do NOT need this: a transaction id is unique and carries its
+// own shop_id, which is the right ownership rule for its bill, report row and
+// send. Scoping those by a request header would let one shop read another's
+// bill by guessing an id.
+
+let legacyShopCache = null; // shop_1 era data, demo/legacy only
+
+function adminTokenOk(req) {
+  const token = process.env.ADMIN_TOKEN;
+  if (!token) return false;
+  const given = String(req.header("Authorization") || "").replace(/^Bearer\s+/i, "");
+  return given && given === token;
+}
+
+/**
+ * resolveShop(req) -> shop row, or null when the request names no valid shop.
+ * Caches the legacy fallback so an old app build without a shop code can
+ * still be debugged locally.
+ */
+async function resolveShop(req) {
+  const code = req.header("X-Shop-Code") || req.query.shop_code;
+  if (code) return (await db.getShopByCode(code)) || null;
+
+  const shopId = req.query.shop_id;
+  if (shopId && adminTokenOk(req)) return (await db.getShop(shopId)) || null;
+
+  // No shop named at all.
+  const legacy = process.env.LEGACY_SHOP_ID || "legacy_demo";
+  if (!legacyShopCache) legacyShopCache = await db.getShop(legacy);
+  return legacyShopCache || null;
+}
+
+// Express helper: resolve, or answer 404/400 and return null.
+async function requireShop(req, res) {
+  const shop = await resolveShop(req);
+  if (!shop) {
+    res.status(404).json({
+      error: "Unknown shop code",
+      hint: "App me dukaan ka code daalein.",
+    });
+    return null;
+  }
+  return shop;
+}
 
 const UPLOAD_DIR = path.join(__dirname, "..", "..", "uploads");
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -73,17 +130,20 @@ router.post("/parse-item", async (req, res) => {
     const { text, transaction_id } = req.body;
     if (!text) return res.status(400).json({ error: "text is required" });
 
+    const shop = await requireShop(req, res);
+    if (!shop) return;
+
     const parsedItems = await parseSaleItems(text);
-    // A price the shopkeeper didn't say can come from the catalog — this is
-    // what removes the "Price?" dead-end for known products.
-    autoFillPrices(parsedItems, await db.listProducts());
+    // A price the shopkeeper didn't say can come from THIS shop's catalog —
+    // this is what removes the "Price?" dead-end for known products.
+    autoFillPrices(parsedItems, await db.listProducts(shop.shop_id));
     const newItems = parsedItems.map(toStoredItem);
 
     let transaction;
     if (transaction_id) {
       transaction = await db.addItemsToTransaction(transaction_id, newItems);
     } else {
-      transaction = await db.createTransaction({ shop_id: DEFAULT_SHOP_ID, items: newItems });
+      transaction = await db.createTransaction({ shop_id: shop.shop_id, items: newItems });
     }
 
     const missingPriceCount = newItems.filter((i) => i.price == null).length;
@@ -235,6 +295,9 @@ router.post("/utterance", async (req, res) => {
     // Aam".
     const { phone, partial, rest } = findPhoneNumber(text);
 
+    const shop = await requireShop(req, res);
+    if (!shop) return;
+
     let transaction = null;
     if (transaction_id) {
       transaction = await db.getTransaction(transaction_id);
@@ -255,7 +318,7 @@ router.post("/utterance", async (req, res) => {
         // Catalog prices answer a missing price BEFORE matchPriceFill runs:
         // "aam" re-spoken after a no-price line then carries the catalog
         // price, and fills that line instead of adding a second item.
-        autoFillPrices(parsed, await db.listProducts());
+        autoFillPrices(parsed, await db.listProducts(shop.shop_id));
         const { fills, additions } = matchPriceFill(transaction ? transaction.items : [], parsed);
 
         // Fills first: they answer a price the bill is already blocked on.
@@ -272,7 +335,7 @@ router.post("/utterance", async (req, res) => {
         if (storedNewItems.length) {
           transaction = transaction
             ? await db.addItemsToTransaction(transaction.transaction_id, storedNewItems)
-            : await db.createTransaction({ shop_id: DEFAULT_SHOP_ID, items: storedNewItems });
+            : await db.createTransaction({ shop_id: shop.shop_id, items: storedNewItems });
         }
       } catch (err) {
         // Not fatal, and this matters: "...haan theek hai, number 987..." has a
@@ -386,7 +449,9 @@ router.post("/finalize", async (req, res) => {
  * List the catalog. Optionally ?q= filters by name/brand substring.
  */
 router.get("/products", async (req, res) => {
-  const products = await db.listProducts();
+  const shop = await requireShop(req, res);
+  if (!shop) return;
+  const products = await db.listProducts(shop.shop_id);
   const q = String(req.query.q || "").toLowerCase().trim();
   const filtered = q
     ? products.filter(
@@ -437,7 +502,9 @@ function optionalPrice(value) {
 router.post("/products", async (req, res) => {
   const problem = validateProduct(req.body);
   if (problem) return res.status(400).json({ error: problem });
-  const product = await db.upsertProduct({
+  const shop = await requireShop(req, res);
+  if (!shop) return;
+  const product = await db.upsertProduct(shop.shop_id, {
     name: String(req.body.name).trim(),
     brand: req.body.brand ? String(req.body.brand).trim() : null,
     category: req.body.category ? String(req.body.category).trim() : null,
@@ -455,11 +522,13 @@ router.post("/products", async (req, res) => {
 router.put("/products/:id", async (req, res) => {
   const problem = validateProduct(req.body);
   if (problem) return res.status(400).json({ error: problem });
-  const products = await db.listProducts();
+  const shop = await requireShop(req, res);
+  if (!shop) return;
+  const products = await db.listProducts(shop.shop_id);
   if (!products.some((p) => p.product_id === req.params.id)) {
     return res.status(404).json({ error: "Product not found" });
   }
-  const product = await db.upsertProduct({
+  const product = await db.upsertProduct(shop.shop_id, {
     product_id: req.params.id,
     name: String(req.body.name).trim(),
     brand: req.body.brand ? String(req.body.brand).trim() : null,
@@ -473,7 +542,9 @@ router.put("/products/:id", async (req, res) => {
 });
 
 router.delete("/products/:id", async (req, res) => {
-  const deleted = await db.deleteProduct(req.params.id);
+  const shop = await requireShop(req, res);
+  if (!shop) return;
+  const deleted = await db.deleteProduct(shop.shop_id, req.params.id);
   if (!deleted) return res.status(404).json({ error: "Product not found" });
   res.json({ deleted: true });
 });
@@ -489,22 +560,33 @@ router.get("/report/daily", async (req, res) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return res.status(400).json({ error: "date must look like YYYY-MM-DD" });
   }
+  const shop = await requireShop(req, res);
+  if (!shop) return;
   const report = dailyReport({
-    transactions: await db.listTransactions(),
-    products: await db.listProducts(),
+    transactions: await db.listTransactions(shop.shop_id),
+    products: await db.listProducts(shop.shop_id),
     date,
   });
   res.json(report);
 });
 
 /**
- * The shop profile — the app header shows the real shop name instead of a
- * hardcoded label. MVP: always shop_1.
+ * The shop profile. This is also the app's shop-code check: a phone that has
+ * just been given a code calls this and, on 200, knows the code is real.
+ * Deliberately returns only what the app needs — never the code list.
  */
 router.get("/shop", async (req, res) => {
-  const shop = await db.getShop(DEFAULT_SHOP_ID);
-  if (!shop) return res.status(404).json({ error: "Shop not found" });
-  res.json({ shop });
+  const shop = await requireShop(req, res);
+  if (!shop) return;
+  res.json({
+    shop: {
+      shop_id: shop.shop_id,
+      shop_name: shop.shop_name,
+      shop_type: shop.shop_type,
+      upi_id: shop.upi_id,
+      owner_phone: shop.owner_phone,
+    },
+  });
 });
 
 /**
@@ -514,7 +596,9 @@ router.get("/shop", async (req, res) => {
  */
 router.get("/transactions", async (req, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 50);
-  const transactions = (await db.listTransactions())
+  const shop = await requireShop(req, res);
+  if (!shop) return;
+  const transactions = (await db.listTransactions(shop.shop_id))
     .filter((t) => ["confirmed", "sent"].includes(t.status))
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     .slice(0, limit);
@@ -528,8 +612,10 @@ router.get("/transactions", async (req, res) => {
  * settlement mechanism yet — same assumption as the daily report.
  */
 router.get("/customers", async (req, res) => {
+  const shop = await requireShop(req, res);
+  if (!shop) return;
   const byPhone = new Map();
-  for (const t of await db.listTransactions()) {
+  for (const t of await db.listTransactions(shop.shop_id)) {
     if (!["confirmed", "sent"].includes(t.status)) continue;
     const phone = t.customer_phone;
     if (!phone) continue;
@@ -550,6 +636,192 @@ router.get("/customers", async (req, res) => {
     (a, b) => new Date(b.last_purchase) - new Date(a.last_purchase)
   );
   res.json({ customers });
+});
+
+// --- Voice Lock --------------------------------------------------------------
+// Speaker verification lives in the Python service (voice-service/, port 8000).
+// The phone never talks to it — only this backend does — so port 8000 never has
+// to be reachable over Wi-Fi and the service can bind to 127.0.0.1.
+//
+// Why a separate /verify-and-transcribe and not a change to /transcribe: the
+// typed fallback screens still use /transcribe and must never be gated. Same
+// additive-route pattern the hands-free flow followed.
+
+/**
+ * Verify the clip, then transcribe it only if the owner is speaking.
+ * Same multipart upload as /api/transcribe (field name: "audio").
+ *
+ * A rejection is HTTP 200 with empty text — to the app it looks like silence,
+ * which is exactly how a customer talking should feel. It is not an error.
+ */
+router.post("/verify-and-transcribe", upload.single("audio"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "audio file required" });
+  try {
+    const shop = await requireShop(req, res);
+    if (!shop) { fs.unlink(req.file.path, () => {}); return; }
+    const gate = await runVoiceGate(req.file.path, shop.shop_id);
+
+    if (!gate.allow) {
+      fs.unlink(req.file.path, () => {});
+      return res.json({
+        text: "",
+        speaker_verified: false,
+        reason: gate.reason,
+        lock_state: gate.lockState,
+      });
+    }
+
+    // No speech in the clip is not a failure — the owner said nothing, or the
+// clip was music/noise. Return empty text exactly like a rejected clip, so
+// the app treats both as "nothing to bill".
+    let text = "";
+    try {
+      text = (await transcribeAudio(req.file.path)) || "";
+    } catch (e) {
+      if (!/did not return a transcript/i.test(e.message)) throw e;
+    }
+    fs.unlink(req.file.path, () => {});
+    return res.json({
+      text,
+      speaker_verified: gate.verified,
+      lock_state: gate.lockState,
+    });
+  } catch (err) {
+    fs.unlink(req.file.path, () => {});
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+// Verify + decide, with the service error folded into the fail mode.
+async function runVoiceGate(audioPath, shopId) {
+  const mode = voice.mode();
+  const failMode = voice.failMode();
+  if (mode === "off") {
+    return voice.decide({ mode: "off", failMode });
+  }
+
+  let result = null;
+  let error = null;
+  try {
+    result = await voice.verifySpeaker(audioPath, shopId);
+    if (result.status === "not_enrolled") {
+      // No profile yet: shadow mode must not block a shop that hasn't enrolled;
+      // enforce mode treats it as "not the owner".
+      result = { is_speaker: false, score: 0, reason: "not_enrolled" };
+    }
+  } catch (e) {
+    console.error("[VOICE LOCK] verify failed:", e.message);
+    error = e;
+  }
+  return voice.decide({ mode, result, error, failMode });
+}
+
+/**
+ * One enrollment clip. body: multipart "audio".
+ * Once enrolled, further calls are REFUSED unless the profile was reset first
+ * with the admin PIN — otherwise anything on the network could overwrite the
+ * owner's voice lock.
+ */
+// Keep in sync with VoiceEnrollScreen's five sentences.
+const ENROLL_TARGET_CLIPS = 5;
+
+router.post("/enroll-voice", upload.single("audio"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "audio file required" });
+  const shop = await requireShop(req, res);
+  if (!shop) { fs.unlink(req.file.path, () => {}); return; }
+  try {
+    // Enrollment completes after ENROLL_TARGET_CLIPS clips. Until then more
+    // clips are the normal flow; after that, a new voice can only replace the
+    // profile through the PIN-gated reset — otherwise anyone on the network
+    // could overwrite the owner's voice lock.
+    const status = await voice.getVoiceStatus(shop.shop_id).catch(() => null);
+    if (status?.enrolled && (status.samples || 0) >= ENROLL_TARGET_CLIPS) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(409).json({
+        error: "Voice already registered. Re-enroll se pehle Voice Lock reset karein.",
+        code: "already_enrolled",
+      });
+    }
+
+    const result = await voice.enrollSample(req.file.path, shop.shop_id);
+    fs.unlink(req.file.path, () => {});
+
+    if (!result.ok) {
+      return res.status(result.quality_rejected ? 422 : 400).json({
+        error: result.error,
+        quality_rejected: Boolean(result.quality_rejected),
+      });
+    }
+    return res.json(result);
+  } catch (err) {
+    fs.unlink(req.file.path, () => {});
+    return res.status(400).json({ error: "Voice service se connect nahi hua: " + err.message });
+  }
+});
+
+/**
+ * What the app shows on the voice screen: enrolled? mode? service up?
+ */
+router.get("/voice-status", async (req, res) => {
+  const shop = await requireShop(req, res);
+  if (!shop) return;
+  try {
+    const status = await voice.getVoiceStatus(shop.shop_id);
+    res.json(status);
+  } catch (err) {
+    res.json({
+      enrolled: false,
+      samples: 0,
+      mode: voice.mode(),
+      service_up: false,
+      error: err.message,
+    });
+  }
+});
+
+/**
+ * Delete the stored voice profile. Requires the admin PIN so a stranger
+ * holding the phone (or on the network) can't quietly re-enroll their voice.
+ */
+router.post("/voice-reset", async (req, res) => {
+  const pin = process.env.VOICE_ADMIN_PIN;
+  if (!pin) {
+    return res.status(503).json({ error: "VOICE_ADMIN_PIN not set in .env — reset disabled" });
+  }
+  if (String(req.body?.pin || "") !== pin) {
+    return res.status(403).json({ error: "Ghalat PIN" });
+  }
+  const shop = await requireShop(req, res);
+  if (!shop) return;
+  try {
+    const result = await voice.resetVoice(shop.shop_id);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * The third safety valve (PDF T7.4): an in-memory override so the owner can
+ * switch the lock off for a bad day without editing .env and restarting.
+ * Not persisted — a restart returns to the .env value on purpose.
+ */
+router.post("/voice-override", (req, res) => {
+  const pin = process.env.VOICE_ADMIN_PIN;
+  if (pin && String(req.body?.pin || "") !== pin) {
+    return res.status(403).json({ error: "Ghalat PIN" });
+  }
+  const value = String(req.body?.mode || "").toLowerCase();
+  if (value === "off" || value === "shadow" || value === "enforce") {
+    voice.setOverride(value);
+    console.log(`[VOICE LOCK] runtime override -> ${value}`);
+    return res.json({ mode: value, override: true });
+  }
+  if (value === "clear") {
+    voice.setOverride(null);
+    return res.json({ mode: voice.mode(), override: false });
+  }
+  res.status(400).json({ error: "mode must be off | shadow | enforce | clear" });
 });
 
 /**

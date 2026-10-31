@@ -21,7 +21,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useContinuousListening } from '../services/useContinuousListening';
 import { useTapToTalk } from '../services/useTapToTalk';
 import { errorMessage } from '../services/errorMessage';
-import { BASE_URL, transcribeAudio, sendUtterance, finalizeBill, sendBill, getTransaction } from '../services/api';
+import { BASE_URL, transcribeAudio, verifyAndTranscribeAudio, sendUtterance, finalizeBill, sendBill, getTransaction, getVoiceStatus } from '../services/api';
 import { colors, shadow, shadowStrong } from '../theme';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -45,6 +45,8 @@ export default function HandsFreeScreen() {
   const [lastHeard, setLastHeard] = useState('');
   const [parseError, setParseError] = useState(null);
   const [phoneHint, setPhoneHint] = useState(null); // garbled number — ask for a repeat
+  const [voiceHint, setVoiceHint] = useState(null); // Voice Lock rejection — 2 s, non-blocking
+  const [voiceStatus, setVoiceStatus] = useState(null); // { enrolled, mode, service_up }
   const [sendResult, setSendResult] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
   const [billUrl, setBillUrl] = useState(null); // set when the bill PNG exists but the send failed
@@ -59,6 +61,22 @@ export default function HandsFreeScreen() {
   const transactionIdRef = useRef(null);
   const appStateRef = useRef(S.LISTENING);
   const phoneRef = useRef(null);
+  const voiceHintTimer = useRef(null);
+
+  // A rejected clip gets a short, quiet hint — never an error screen, never a
+// sound, never a retry loop (PDF T7.3). It clears itself so a busy counter
+// doesn't accumulate stale messages.
+  function showVoiceHint(reason) {
+    const text =
+      reason === 'too_short'
+        ? 'Thoda lamba bolein — awaaz bahut chhoti thi'
+        : reason === 'service_down'
+          ? 'Voice Lock off hai'
+          : 'Awaaz pehchani nahi gayi';
+    setVoiceHint(text);
+    if (voiceHintTimer.current) clearTimeout(voiceHintTimer.current);
+    voiceHintTimer.current = setTimeout(() => setVoiceHint(null), 2200);
+  }
 
   function setStateSafe(s) { appStateRef.current = s; setAppState(s); }
   function setPhoneSafe(p) { phoneRef.current = p; setDetectedPhone(p); }
@@ -70,11 +88,30 @@ export default function HandsFreeScreen() {
 
     let text;
     try {
-      const r = await transcribeAudio(uri);
+      // Voice Lock gate: the backend verifies the speaker before it spends a
+      // Sarvam call. A rejected clip comes back exactly like silence — no
+      // text, no lastHeard update, no sendUtterance — so a customer's voice
+      // cannot add an item. A rejection never touches bill state: items
+      // already on the bill stay, the countdown is not reset.
+      const r = await verifyAndTranscribeAudio(uri);
+      if (r.speaker_verified === false) {
+        showVoiceHint(r.reason);
+        return;
+      }
       text = r.text;
       if (!text?.trim()) return;
       setLastHeard(text);
-    } catch { return; }
+    } catch (e) {
+      // Network / server failure: fall back to the ungated route so a broken
+      // voice service never stops billing (fail-open, same policy as the
+      // backend's VOICE_FAIL_MODE).
+      try {
+        const r = await transcribeAudio(uri);
+        text = r.text;
+        if (!text?.trim()) return;
+        setLastHeard(text);
+      } catch { return; }
+    }
 
     try {
       const data = await sendUtterance(text, transactionIdRef.current);
@@ -117,8 +154,20 @@ export default function HandsFreeScreen() {
 
   useEffect(() => {
     if (mode === 'auto') startListening();
-    return () => { stopListening(); clearCountdown(); };
+    return () => {
+      stopListening();
+      clearCountdown();
+      if (voiceHintTimer.current) clearTimeout(voiceHintTimer.current);
+    };
   }, [mode]);
+
+  // Voice Lock state on mount: the "Voice Lock off" badge and the setup
+  // banner both need it. Never blocking — a failed check just means no badge.
+  useEffect(() => {
+    getVoiceStatus()
+      .then((v) => setVoiceStatus(v))
+      .catch(() => setVoiceStatus(null));
+  }, []);
 
   async function toggleMode() {
     if (mode === 'tap' && tap.recording) await tap.stop();
@@ -342,6 +391,23 @@ export default function HandsFreeScreen() {
           : 'Auto mode — mic hamesha sun raha hai (shaant dukaan ke liye).'}
       </Text>
 
+      {/* Voice Lock state: a badge when the lock is on but the service is
+          down (failing open), and a one-line setup prompt when the shop has
+          never enrolled. Neither blocks anything. */}
+      {!!voiceStatus && voiceStatus.mode !== 'off' && !voiceStatus.service_up && (
+        <TouchableOpacity style={st.lockOffBadge} onPress={() => navigation.navigate('VoiceEnroll')}>
+          <Text style={st.lockOffText}>⚠️ Voice Lock off — billing chalu hai</Text>
+        </TouchableOpacity>
+      )}
+      {!!voiceStatus && !voiceStatus.enrolled && voiceStatus.mode !== 'off' && (
+        <TouchableOpacity style={st.enrollBanner} onPress={() => navigation.navigate('VoiceEnroll')}>
+          <Text style={st.enrollBannerText}>
+            Apni awaaz register karein — 5 chhote clips
+          </Text>
+          <Text style={st.enrollBannerArrow}>→</Text>
+        </TouchableOpacity>
+      )}
+
       {mode === 'tap' ? (
         <View style={st.tapWrap}>
           <TouchableOpacity
@@ -380,6 +446,9 @@ export default function HandsFreeScreen() {
         <Text style={st.phoneHint} numberOfLines={2}>
           {'⚠️'} {phoneHint}
         </Text>
+      )}
+      {!!voiceHint && (
+        <Text style={st.voiceHint} numberOfLines={1}>{voiceHint}</Text>
       )}
 
       {/* Items list */}
@@ -474,6 +543,22 @@ const st = StyleSheet.create({
     color: '#B45309', fontSize: 13, fontWeight: '700', backgroundColor: colors.orangeSoft,
     borderRadius: 12, padding: 10, marginBottom: 6, lineHeight: 18,
   },
+  voiceHint: {
+    color: colors.sub, fontSize: 12.5, fontWeight: '600', fontStyle: 'italic',
+    marginBottom: 6, paddingHorizontal: 2,
+  },
+  lockOffBadge: {
+    alignSelf: 'flex-start', backgroundColor: colors.orangeSoft, borderRadius: 10,
+    paddingVertical: 7, paddingHorizontal: 11, marginBottom: 8,
+  },
+  lockOffText: { color: '#92400E', fontSize: 11.5, fontWeight: '700' },
+  enrollBanner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: colors.primarySoft, borderRadius: 12,
+    paddingVertical: 10, paddingHorizontal: 13, marginBottom: 8,
+  },
+  enrollBannerText: { color: colors.primary, fontSize: 12.5, fontWeight: '700' },
+  enrollBannerArrow: { color: colors.primary, fontSize: 16, fontWeight: '800' },
 
   list: { flex: 1, marginTop: 10 },
   emptyText: { color: colors.faint, textAlign: 'center', marginTop: 40, fontSize: 14, lineHeight: 24 },
