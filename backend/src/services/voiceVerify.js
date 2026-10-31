@@ -21,7 +21,13 @@ const axios = require("axios");
 
 const SERVICE_URL = () => process.env.VOICE_SERVICE_URL || "http://127.0.0.1:8000";
 const TOKEN = () => process.env.VOICE_SERVICE_TOKEN || "";
-const SPEAKER_ID = process.env.VOICE_SPEAKER_ID || "shop_1_owner";
+
+// One voice profile per shop. The Python service keys everything by
+// speaker_id, so "kapda_delhi_owner" and "kirana_pune_owner" are two separate
+// profiles with no service change. VOICE_SPEAKER_ID overrides for local
+// single-shop debugging.
+const speakerIdFor = (shopId) =>
+  process.env.VOICE_SPEAKER_ID || `${shopId || "shop_1"}_owner`;
 
 function validMode(value) {
   const m = String(value || "off").toLowerCase();
@@ -133,10 +139,10 @@ function decide({ mode: rawMode, result, error, failMode: rawFailMode } = {}) {
  * Throws when the service itself is unreachable / misbehaving — decide() turns
  * that into the fail mode.
  */
-async function verifySpeaker(audioPath) {
+async function verifySpeaker(audioPath, shopId) {
   const form = new FormData();
   form.append("audio", fs.createReadStream(audioPath));
-  form.append("speaker_id", SPEAKER_ID);
+  form.append("speaker_id", speakerIdFor(shopId));
 
   const res = await axios.post(`${SERVICE_URL()}/verify`, form, {
     headers: headers(form.getHeaders()),
@@ -161,10 +167,10 @@ async function verifySpeaker(audioPath) {
  * `quality_rejected: true` when the service refused the clip (422) — the app
  * shows the reason and lets the owner retry that clip.
  */
-async function enrollSample(audioPath) {
+async function enrollSample(audioPath, shopId) {
   const form = new FormData();
   form.append("audio", fs.createReadStream(audioPath));
-  form.append("speaker_id", SPEAKER_ID);
+  form.append("speaker_id", speakerIdFor(shopId));
 
   const res = await axios.post(`${SERVICE_URL()}/enroll`, form, {
     headers: headers(form.getHeaders()),
@@ -187,7 +193,7 @@ async function enrollSample(audioPath) {
  * Enrollment state as the app needs it: enrolled? how many samples? which
  * mode is the lock in, and is the service actually up?
  */
-async function getVoiceStatus() {
+async function getVoiceStatus(shopId) {
   if (mode() === "off") {
     // Still report whether the service is reachable, so the badge is honest.
     let serviceUp = false;
@@ -202,7 +208,7 @@ async function getVoiceStatus() {
   const res = await axios.get(`${SERVICE_URL()}/status`, {
     headers: headers(),
     timeout: 3000,
-    params: { speaker_id: SPEAKER_ID },
+    params: { speaker_id: speakerIdFor(shopId) },
   });
   return {
     enrolled: Boolean(res.data?.enrolled),
@@ -214,9 +220,9 @@ async function getVoiceStatus() {
 }
 
 /** Delete the stored profile (re-enrollment). */
-async function resetVoice() {
+async function resetVoice(shopId) {
   const form = new FormData();
-  form.append("speaker_id", SPEAKER_ID);
+  form.append("speaker_id", speakerIdFor(shopId));
   const res = await axios.post(`${SERVICE_URL()}/reset`, form, {
     headers: headers(form.getHeaders()),
     timeout: 10000,
@@ -268,5 +274,5 @@ module.exports = {
   failMode,
   setOverride,
   getOverride,
-  SPEAKER_ID,
+  speakerIdFor,
 };

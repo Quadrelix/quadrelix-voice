@@ -90,13 +90,15 @@ test("no match leaves the item unpriced", () => {
 
 test("bill generation deducts stock exactly once, across a /finalize retry", async () => {
   await db.init();
-  assert.strictEqual((await db.listProducts()).length, 0);
+  assert.strictEqual((await db.listProducts("shop_test")).length, 0);
 
-  await db.upsertProduct({ name: "Chini", purchase_price: 40, selling_price: 50, stock_qty: 10, min_stock_level: null });
-  const productId = (await db.listProducts())[0].product_id;
+  await db.upsertProduct("shop_test", { name: "Chini", purchase_price: 40, selling_price: 50, stock_qty: 10, min_stock_level: null });
+  const productId = (await db.listProducts("shop_test"))[0].product_id;
 
+  // Same shop as the product: markBillGenerated only deducts stock from the
+  // transaction's own shop, so a mismatch here is (correctly) a no-op.
   const txn = await db.createTransaction({
-    shop_id: "shop_1",
+    shop_id: "shop_test",
     items: [
       { product_name: "Chini", quantity: 4, unit: null, price: 50, product_id: productId, purchase_price: 40, line_total: 200 },
     ],
@@ -110,7 +112,7 @@ test("bill generation deducts stock exactly once, across a /finalize retry", asy
   await db.markBillGenerated(txn.transaction_id, "bill-x.png");
   await db.markSent(txn.transaction_id); // send succeeded later — no deduction here
 
-  assert.strictEqual((await db.listProducts())[0].stock_qty, 6);
+  assert.strictEqual((await db.listProducts("shop_test"))[0].stock_qty, 6);
   const final = await db.getTransaction(txn.transaction_id);
   assert.strictEqual(final.payment_status, "credit");
   assert.strictEqual(final.status, "sent");
@@ -208,12 +210,12 @@ test("a fixed selling price still auto-fills when nothing was spoken", () => {
 });
 
 test("a catalog product can be saved without a selling price", async () => {
-  const product = await db.upsertProduct({
+  const product = await db.upsertProduct("shop_test", {
     name: "Sabzi", brand: null, category: "Sabzi",
     purchase_price: 30, selling_price: null, stock_qty: 20, min_stock_level: 5,
   });
   assert.strictEqual(product.selling_price, null);
-  const found = (await db.listProducts()).find((p) => p.product_id === product.product_id);
+  const found = (await db.listProducts("shop_test")).find((p) => p.product_id === product.product_id);
   assert.strictEqual(found.selling_price, null);
   assert.strictEqual(found.purchase_price, 30);
 });

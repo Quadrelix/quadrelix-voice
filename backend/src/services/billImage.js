@@ -19,7 +19,10 @@ const path = require("path");
 const fs = require("fs");
 const { generateUpiQrBuffer } = require("./qr");
 
-const OUTPUT_DIR = path.join(__dirname, "..", "..", "generated_bills");
+// BILLS_DIR lets a host with an ephemeral disk (Render) write to /tmp while a
+// laptop keeps using the repo folder. server.js serves this same directory.
+const OUTPUT_DIR =
+  process.env.BILLS_DIR || path.join(__dirname, "..", "..", "generated_bills");
 if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
 const FONT_DIR = path.join(__dirname, "..", "..", "assets", "fonts");

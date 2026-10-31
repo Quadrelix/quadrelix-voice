@@ -1,0 +1,44 @@
+# Render blueprint — the backend for the pilot.
+#
+# Deploy: Render dashboard → New → Blueprint → pick this repo → Apply.
+# Then fill the secret env vars in the Render UI (they are marked sync:false,
+# so Render asks for them instead of reading them from git).
+#
+# The voice-service is NOT deployed here. Voice Lock runs in `off` mode on
+# Render during the pilot; keeping it local is a separate track.
+
+services:
+  - type: web
+    name: quadrelix-voice-backend
+    runtime: node
+    plan: free
+    region: singapore          # closest to the shops
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      # --- secrets: set in the Render dashboard, never in git -------------
+      - key: DATABASE_URL          # Neon connection string
+        sync: false
+      - key: ADMIN_TOKEN           # founder-only shop management
+        sync: false
+      - key: SARVAM_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+
+      # --- non-secret configuration ---------------------------------------
+      # Bills are regenerable and sent immediately; Render's disk is
+      # ephemeral, so /tmp is the right home for them.
+      - key: BILLS_DIR
+        value: /tmp/bills
+      # No Python service on Render during the pilot.
+      - key: VOICE_LOCK_MODE
+        value: off
+      - key: VOICE_FAIL_MODE
+        value: open
+      # WhatsApp: share-sheet is the free path; leave the provider blank so
+      # /api/send-bill logs instead of failing.
+      - key: WHATSAPP_PROVIDER
+        value: ""
