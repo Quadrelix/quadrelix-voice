@@ -19,11 +19,15 @@ const api = axios.create({ baseURL: BASE_URL });
 // shop id; without it a request would land in the wrong shop (or in the
 // legacy demo shop), which is exactly the bug multi-shop exists to prevent.
 api.interceptors.request.use(async (config) => {
+  // An explicit header on the call wins. This matters on the code screen:
+  // it validates a code BEFORE any shop is stored, and the interceptor used
+  // to overwrite that header with the previously stored shop — so every
+  // attempt to switch landed back on the old shop ("Demo (legacy data)").
+  config.headers = config.headers || {};
+  if (config.headers["X-Shop-Code"]) return config;
+
   const shop = await getActiveShop();
-  if (shop?.shop_code) {
-    config.headers = config.headers || {};
-    config.headers["X-Shop-Code"] = shop.shop_code;
-  }
+  if (shop?.shop_code) config.headers["X-Shop-Code"] = shop.shop_code;
   return config;
 });
 
@@ -161,7 +165,7 @@ export async function verifyAndTranscribeAudio(fileUri) {
     headers: { "Content-Type": "multipart/form-data" },
     timeout: 20000, // verify (~0.9s) + Sarvam (~1-2s), with slack
   });
-  return res.data; // { text, speaker_verified, reason?, lock_state }
+  return res.data; // { text, allowed, speaker_verified, reason, lock_state }
 }
 
 export async function enrollVoice(fileUri) {

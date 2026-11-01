@@ -164,7 +164,7 @@ router.post("/update-item-price", async (req, res) => {
     if (!transaction_id || item_index == null || price == null) {
       return res.status(400).json({ error: "transaction_id, item_index, and price are required" });
     }
-    const transaction = await db.updateItemPrice(transaction_id, item_index, Number(price));
+    const transaction = await db.updateItemPrice(transaction_id, item_index, price);
     res.json({ transaction });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -665,6 +665,7 @@ router.post("/verify-and-transcribe", upload.single("audio"), async (req, res) =
       fs.unlink(req.file.path, () => {});
       return res.json({
         text: "",
+        allowed: false,
         speaker_verified: false,
         reason: gate.reason,
         lock_state: gate.lockState,
@@ -683,7 +684,9 @@ router.post("/verify-and-transcribe", upload.single("audio"), async (req, res) =
     fs.unlink(req.file.path, () => {});
     return res.json({
       text,
+      allowed: true,
       speaker_verified: gate.verified,
+      reason: gate.reason,
       lock_state: gate.lockState,
     });
   } catch (err) {

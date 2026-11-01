@@ -1,4 +1,5 @@
 node_modules/
+eas-archive/
 .env
 .vscode/
 backend/generated_bills/*.png

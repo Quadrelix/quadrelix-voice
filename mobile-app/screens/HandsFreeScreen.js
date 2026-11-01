@@ -21,7 +21,8 @@ import { useNavigation } from '@react-navigation/native';
 import { useContinuousListening } from '../services/useContinuousListening';
 import { useTapToTalk } from '../services/useTapToTalk';
 import { errorMessage } from '../services/errorMessage';
-import { BASE_URL, transcribeAudio, verifyAndTranscribeAudio, sendUtterance, finalizeBill, sendBill, getTransaction, getVoiceStatus } from '../services/api';
+import { isVoiceAllowed } from '../services/voiceResponse';
+import { BASE_URL, verifyAndTranscribeAudio, sendUtterance, finalizeBill, sendBill, getTransaction, getVoiceStatus } from '../services/api';
 import { colors, shadow, shadowStrong } from '../theme';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -94,23 +95,19 @@ export default function HandsFreeScreen() {
       // cannot add an item. A rejection never touches bill state: items
       // already on the bill stay, the countdown is not reset.
       const r = await verifyAndTranscribeAudio(uri);
-      if (r.speaker_verified === false) {
+      if (!isVoiceAllowed(r)) {
         showVoiceHint(r.reason);
         return;
       }
       text = r.text;
       if (!text?.trim()) return;
+      setParseError(null);
       setLastHeard(text);
     } catch (e) {
-      // Network / server failure: fall back to the ungated route so a broken
-      // voice service never stops billing (fail-open, same policy as the
-      // backend's VOICE_FAIL_MODE).
-      try {
-        const r = await transcribeAudio(uri);
-        text = r.text;
-        if (!text?.trim()) return;
-        setLastHeard(text);
-      } catch { return; }
+      // Only the backend knows whether verification failures may fail open.
+      // A timeout must not bypass an enforced lock via /transcribe.
+      setParseError(errorMessage(e, 'Awaaz process nahi hui. Dobara boliye.'));
+      return;
     }
 
     try {

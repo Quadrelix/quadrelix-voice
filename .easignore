@@ -1,0 +1,27 @@
+# EAS reads this at the repository root instead of nested .gitignore files.
+# Upload only the mobile project; keep its native Android sources.
+/.git
+/.claude
+/.codex
+/.agents
+/.vscode
+/backend
+/voice-service
+/docs
+node_modules/
+.env
+.env.*
+.expo/
+.gradle/
+.idea/
+.cxx/
+build/
+local.properties
+*.iml
+*.hprof
+*.apk
+*.aab
+*.jsbundle
+eas_build.json
+eas_build.log
+/eas-archive/
