@@ -33,6 +33,21 @@ function num(value) {
   return Number.isNaN(n) ? null : n;
 }
 
+function validatePriceUpdate(itemIndex, value) {
+  if (!Number.isSafeInteger(itemIndex) || itemIndex < 0 || itemIndex > 2147483647) {
+    throw new Error("item_index must be a nonnegative integer");
+  }
+  if ((typeof value !== "number" && typeof value !== "string") ||
+      (typeof value === "string" && value.trim() === "")) {
+    throw new Error("price must be a finite number >= 0");
+  }
+  const price = Number(value);
+  if (!Number.isFinite(price) || price < 0) {
+    throw new Error("price must be a finite number >= 0");
+  }
+  return price;
+}
+
 function shapeProduct(row) {
   return {
     product_id: row.product_id,
@@ -200,31 +215,29 @@ const pgImpl = {
   },
 
   async updateItemPrice(transaction_id, item_index, price) {
+    price = validatePriceUpdate(item_index, price);
     const rows = await query(
       `UPDATE transactions
           SET items = jsonb_set(
-                items,
-                ARRAY[$2::text, 'price'],
-                to_jsonb($3::numeric)
-              ),
-              items = jsonb_set(
-                items,
+                jsonb_set(items, ARRAY[$2::text, 'price'], to_jsonb($3::numeric)),
                 ARRAY[$2::text, 'line_total'],
-                to_jsonb(((items->>$2)::jsonb->>'quantity')::numeric * $3::numeric)
-              )
+                to_jsonb((items->$2::int->>'quantity')::numeric * $3::numeric)
+              ),
+              total_amount = COALESCE((
+                SELECT SUM(CASE WHEN ordinal = $2::bigint + 1
+                  THEN (item->>'quantity')::numeric * $3::numeric
+                  ELSE COALESCE((item->>'line_total')::numeric, 0) END)
+                FROM jsonb_array_elements(items) WITH ORDINALITY AS lines(item, ordinal)
+              ), 0)
         WHERE transaction_id = $1
+          AND $2::int < jsonb_array_length(items)
       RETURNING *`,
       [transaction_id, String(item_index), price]
     );
-    if (!rows.length) throw new Error("Transaction not found");
-    const txn = shapeTransaction(rows[0]);
-    // Recompute the total from the updated items.
-    const total = txn.items.reduce((sum, i) => sum + (i.line_total || 0), 0);
-    const final = await query(
-      "UPDATE transactions SET total_amount = $2 WHERE transaction_id = $1 RETURNING *",
-      [transaction_id, total]
-    );
-    return shapeTransaction(final[0]);
+    // Both values use the locked row in ONE UPDATE. A concurrent item append
+    // or price edit must not be overwritten by a second total-only write.
+    if (!rows.length) throw new Error("Transaction or item not found");
+    return shapeTransaction(rows[0]);
   },
 
   async setCustomerPhone(transaction_id, phone) {
@@ -487,6 +500,7 @@ const lowdbImpl = (() => {
     },
 
     async updateItemPrice(transaction_id, item_index, price) {
+      price = validatePriceUpdate(item_index, price);
       const db = backend();
       await db.read();
       const txn = db.data.transactions.find((t) => t.transaction_id === transaction_id);

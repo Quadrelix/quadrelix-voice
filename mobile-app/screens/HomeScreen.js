@@ -30,8 +30,7 @@ import {
   recentTransactions,
   getVoiceStatus,
 } from '../services/api';
-import { clearActiveShop } from '../services/shop';
-import * as Updates from 'expo-updates';
+import { useShop } from '../services/ShopContext';
 import { colors, shadow, shadowStrong, money } from '../theme';
 
 const QUICK_ACTIONS = [
@@ -49,6 +48,7 @@ const EXAMPLES = [
 
 export default function HomeScreen() {
   const navigation = useNavigation();
+  const { switchShop: switchShopState } = useShop();
   const [shop, setShop] = useState(null);
   const [report, setReport] = useState(null);
   const [recent, setRecent] = useState([]);
@@ -93,23 +93,17 @@ export default function HomeScreen() {
     load({ silent: true });
   };
 
-  // Switching shops clears the stored code and restarts the app. Reloading is
-  // deliberate: every screen holds numbers for the OLD shop, and re-mounting
-  // is the one way to guarantee none of them survive the switch.
+  // Switching shops clears the shared shop state; App.js sees shop = null and
+  // swaps the whole navigation tree for the code screen. This has to go
+  // through context — Updates.reloadAsync() does not exist in Expo Go, which
+  // is why the old version cleared the code but stayed on the old shop.
   const switchShop = () => {
     Alert.alert(
       'Dukaan badalni hai?',
-      `${shopName} ka data band ho jayega aur naya code maanga jayega.`,
+      `Abhi ${shopName} khuli hai. Naya code maanga jayega.`,
       [
         { text: 'Nahi', style: 'cancel' },
-        {
-          text: 'Haan, badlo',
-          style: 'destructive',
-          onPress: async () => {
-            await clearActiveShop();
-            Updates.reloadAsync().catch(() => {});
-          },
-        },
+        { text: 'Haan, badlo', style: 'destructive', onPress: () => switchShopState() },
       ]
     );
   };

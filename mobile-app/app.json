@@ -1,13 +1,14 @@
 {
   "expo": {
-    "name": "ai-business-assistant-mobile",
+    "name": "BizMate AI",
     "slug": "ai-business-assistant-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "plugins": [
       "expo-audio",
-      "expo-asset"
+      "expo-asset",
+      "expo-font"
     ],
     "android": {
       "package": "com.nirmal_01.aibusinessassistantmobile",
@@ -23,4 +24,3 @@
     }
   }
 }
-
