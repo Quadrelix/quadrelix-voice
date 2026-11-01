@@ -75,7 +75,26 @@ function shapeTransaction(row) {
     payment_status: row.payment_status,
     bill_image_path: row.bill_image_path,
     created_at: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+    finalized_at: row.finalized_at instanceof Date ? row.finalized_at.toISOString() : row.finalized_at ?? null,
+    delivery_status: row.delivery_status || "none",
   };
+}
+
+// A finalized bill is frozen: its items, total and stock movement are settled.
+// Corrections are a separate, explicit feature — not a silent edit.
+class BillFrozenError extends Error {
+  constructor() {
+    super("Bill already finalized — it can no longer be edited");
+    this.code = "bill_frozen";
+  }
+}
+
+// What /finalize and /generate-bill both require before a sale may complete.
+function assertBillable(txn) {
+  if (!txn.items || !txn.items.length) throw new Error("This bill has no items on it yet");
+  if (txn.items.some((i) => i.price == null)) {
+    throw new Error("Some items are missing a price — fill those in first");
+  }
 }
 
 function shapeShop(row) {
@@ -124,6 +143,30 @@ function pgPool() {
 async function query(text, params) {
   const res = await pgPool().query(text, params);
   return res.rows;
+}
+
+// Run fn(client) inside one database transaction; any throw rolls it all back.
+async function withTx(fn) {
+  const client = await pgPool().connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (e) {
+    try { await client.query("ROLLBACK"); } catch { /* connection already dead */ }
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+// After a guarded UPDATE matched nothing: say WHY, so a frozen bill is not
+// reported as a missing one.
+async function explainNoMatch(transaction_id, fallbackMessage) {
+  const rows = await query("SELECT finalized_at FROM transactions WHERE transaction_id=$1", [transaction_id]);
+  if (rows.length && rows[0].finalized_at) throw new BillFrozenError();
+  throw new Error(fallbackMessage);
 }
 
 const pgImpl = {
@@ -206,11 +249,11 @@ const pgImpl = {
                 SELECT SUM(COALESCE((e->>'line_total')::numeric, 0))
                   FROM jsonb_array_elements(items || $2::jsonb) e
               ), 0)
-        WHERE transaction_id = $1
+        WHERE transaction_id = $1 AND finalized_at IS NULL
       RETURNING *`,
       [transaction_id, JSON.stringify(items || [])]
     );
-    if (!rows.length) throw new Error("Transaction not found");
+    if (!rows.length) await explainNoMatch(transaction_id, "Transaction not found");
     return shapeTransaction(rows[0]);
   },
 
@@ -230,22 +273,24 @@ const pgImpl = {
                 FROM jsonb_array_elements(items) WITH ORDINALITY AS lines(item, ordinal)
               ), 0)
         WHERE transaction_id = $1
+          AND finalized_at IS NULL
           AND $2::int < jsonb_array_length(items)
       RETURNING *`,
       [transaction_id, String(item_index), price]
     );
     // Both values use the locked row in ONE UPDATE. A concurrent item append
     // or price edit must not be overwritten by a second total-only write.
-    if (!rows.length) throw new Error("Transaction or item not found");
+    if (!rows.length) await explainNoMatch(transaction_id, "Transaction or item not found");
     return shapeTransaction(rows[0]);
   },
 
   async setCustomerPhone(transaction_id, phone) {
     const rows = await query(
-      "UPDATE transactions SET customer_phone=$2, status='confirmed' WHERE transaction_id=$1 RETURNING *",
+      `UPDATE transactions SET customer_phone=$2, status='confirmed'
+        WHERE transaction_id=$1 AND finalized_at IS NULL RETURNING *`,
       [transaction_id, phone]
     );
-    if (!rows.length) throw new Error("Transaction not found");
+    if (!rows.length) await explainNoMatch(transaction_id, "Transaction not found");
     return shapeTransaction(rows[0]);
   },
 
@@ -258,39 +303,53 @@ const pgImpl = {
     return shapeTransaction(rows[0]);
   },
 
-  async markBillGenerated(transaction_id, bill_image_path) {
-    // Stock is deducted exactly once, HERE: the bill being rendered is the
-    // moment the goods left the shop. `bill_image_path IS NULL` is the guard
-    // that makes a re-run of /finalize idempotent.
-    const rows = await query(
-      `UPDATE transactions SET bill_image_path = $2
-        WHERE transaction_id = $1 AND bill_image_path IS NULL
-      RETURNING *`,
-      [transaction_id, bill_image_path]
-    );
-
-    if (!rows.length) {
-      const existing = await query("SELECT * FROM transactions WHERE transaction_id=$1", [transaction_id]);
-      if (!existing.length) throw new Error("Transaction not found");
-      return shapeTransaction(existing[0]); // already generated — stock untouched
-    }
-
-    const txn = shapeTransaction(rows[0]);
-    for (const item of txn.items || []) {
-      if (item.product_id == null) continue;
-      await query(
-        `UPDATE products SET stock_qty = GREATEST(0, COALESCE(stock_qty,0) - $3)
-          WHERE product_id = $1 AND shop_id = $2`,
-        [item.product_id, txn.shop_id, item.quantity || 0]
+  // Complete a sale: the ONE place a bill becomes final. Row lock + one database
+  // transaction, so the bill marker, the phone/payment fields and every stock
+  // deduction commit together or not at all. A retry (or a second request racing
+  // the first) blocks on the lock, then sees finalized_at and returns the
+  // existing result without touching stock again.
+  async finalizeSale(transaction_id, { phone, payment_status, bill_image_path } = {}) {
+    return withTx(async (client) => {
+      const locked = await client.query(
+        "SELECT * FROM transactions WHERE transaction_id=$1 FOR UPDATE",
+        [transaction_id]
       );
-    }
-    return txn;
+      if (!locked.rows.length) throw new Error("Transaction not found");
+      const current = shapeTransaction(locked.rows[0]);
+      if (current.finalized_at) return { transaction: current, already_finalized: true };
+      assertBillable(current);
+
+      const updated = await client.query(
+        `UPDATE transactions
+            SET bill_image_path = $2,
+                customer_phone  = COALESCE($3, customer_phone),
+                payment_status  = COALESCE($4, payment_status),
+                status = 'confirmed',
+                finalized_at = now()
+          WHERE transaction_id = $1
+        RETURNING *`,
+        [transaction_id, bill_image_path, phone ?? null, payment_status ?? null]
+      );
+      const txn = shapeTransaction(updated.rows[0]);
+      for (const item of txn.items) {
+        if (item.product_id == null) continue;
+        await client.query(
+          `UPDATE products SET stock_qty = GREATEST(0, COALESCE(stock_qty,0) - $3)
+            WHERE product_id = $1 AND shop_id = $2`,
+          [item.product_id, txn.shop_id, item.quantity || 0]
+        );
+      }
+      return { transaction: txn, already_finalized: false };
+    });
   },
 
-  async markSent(transaction_id) {
+  async markDelivery(transaction_id, delivery_status) {
     const rows = await query(
-      "UPDATE transactions SET status='sent' WHERE transaction_id=$1 RETURNING *",
-      [transaction_id]
+      `UPDATE transactions
+          SET delivery_status = $2::text,
+              status = CASE WHEN $2::text = 'sent' THEN 'sent' ELSE status END
+        WHERE transaction_id = $1 RETURNING *`,
+      [transaction_id, delivery_status]
     );
     if (!rows.length) throw new Error("Transaction not found");
     return shapeTransaction(rows[0]);
@@ -482,6 +541,8 @@ const lowdbImpl = (() => {
         payment_status: "paid",
         bill_image_path: null,
         created_at: new Date().toISOString(),
+        finalized_at: null,
+        delivery_status: "none",
       };
       db.data.transactions.push(transaction);
       await save();
@@ -493,6 +554,7 @@ const lowdbImpl = (() => {
       await db.read();
       const txn = db.data.transactions.find((t) => t.transaction_id === transaction_id);
       if (!txn) throw new Error("Transaction not found");
+      if (txn.finalized_at) throw new BillFrozenError();
       txn.items.push(...items);
       txn.total_amount = txn.items.reduce((sum, i) => sum + (i.line_total || 0), 0);
       await save();
@@ -505,6 +567,7 @@ const lowdbImpl = (() => {
       await db.read();
       const txn = db.data.transactions.find((t) => t.transaction_id === transaction_id);
       if (!txn) throw new Error("Transaction not found");
+      if (txn.finalized_at) throw new BillFrozenError();
       const item = txn.items[item_index];
       if (!item) throw new Error("Item not found at that index");
       item.price = price;
@@ -519,6 +582,7 @@ const lowdbImpl = (() => {
       await db.read();
       const txn = db.data.transactions.find((t) => t.transaction_id === transaction_id);
       if (!txn) throw new Error("Transaction not found");
+      if (txn.finalized_at) throw new BillFrozenError();
       txn.customer_phone = phone;
       txn.status = "confirmed";
       await save();
@@ -535,34 +599,38 @@ const lowdbImpl = (() => {
       return txn;
     },
 
-    async markBillGenerated(transaction_id, bill_image_path) {
+    async finalizeSale(transaction_id, { phone, payment_status, bill_image_path } = {}) {
       const db = backend();
       await db.read();
       const txn = db.data.transactions.find((t) => t.transaction_id === transaction_id);
       if (!txn) throw new Error("Transaction not found");
-      const firstGeneration = txn.bill_image_path == null;
+      if (txn.finalized_at) return { transaction: txn, already_finalized: true };
+      assertBillable(txn);
       txn.bill_image_path = bill_image_path;
-      if (firstGeneration) {
-        for (const item of txn.items || []) {
-          if (item.product_id == null) continue;
-          const product = db.data.products.find(
-            (p) => p.product_id === item.product_id && (p.shop_id || "shop_1") === txn.shop_id
-          );
-          if (product) {
-            product.stock_qty = Math.max(0, (product.stock_qty || 0) - (item.quantity || 0));
-          }
+      if (phone != null) txn.customer_phone = phone;
+      if (payment_status != null) txn.payment_status = payment_status;
+      txn.status = "confirmed";
+      txn.finalized_at = new Date().toISOString();
+      for (const item of txn.items || []) {
+        if (item.product_id == null) continue;
+        const product = db.data.products.find(
+          (p) => p.product_id === item.product_id && (p.shop_id || "shop_1") === txn.shop_id
+        );
+        if (product) {
+          product.stock_qty = Math.max(0, (product.stock_qty || 0) - (item.quantity || 0));
         }
       }
       await save();
-      return txn;
+      return { transaction: txn, already_finalized: false };
     },
 
-    async markSent(transaction_id) {
+    async markDelivery(transaction_id, delivery_status) {
       const db = backend();
       await db.read();
       const txn = db.data.transactions.find((t) => t.transaction_id === transaction_id);
       if (!txn) throw new Error("Transaction not found");
-      txn.status = "sent";
+      txn.delivery_status = delivery_status;
+      if (delivery_status === "sent") txn.status = "sent";
       await save();
       return txn;
     },
@@ -651,8 +719,13 @@ module.exports = {
   updateItemPrice: (...a) => impl.updateItemPrice(...a),
   setCustomerPhone: (...a) => impl.setCustomerPhone(...a),
   setPaymentStatus: (...a) => impl.setPaymentStatus(...a),
-  markBillGenerated: (...a) => impl.markBillGenerated(...a),
-  markSent: (...a) => impl.markSent(...a),
+  finalizeSale: (...a) => impl.finalizeSale(...a),
+  markDelivery: (...a) => impl.markDelivery(...a),
+  // Thin wrappers kept for the step-by-step typed flow and older tests.
+  markBillGenerated: async (id, billPath) =>
+    (await impl.finalizeSale(id, { bill_image_path: billPath })).transaction,
+  markSent: (id) => impl.markDelivery(id, "sent"),
+  BillFrozenError,
   getTransaction: (...a) => impl.getTransaction(...a),
   getShop: (...a) => impl.getShop(...a),
   getShopByCode: (...a) => impl.getShopByCode(...a),

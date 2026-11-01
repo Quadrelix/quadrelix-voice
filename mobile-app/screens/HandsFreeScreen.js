@@ -49,6 +49,10 @@ export default function HandsFreeScreen() {
   const [voiceHint, setVoiceHint] = useState(null); // Voice Lock rejection — 2 s, non-blocking
   const [voiceStatus, setVoiceStatus] = useState(null); // { enrolled, mode, service_up }
   const [sendResult, setSendResult] = useState(null);
+  // 'sent' | 'simulated' (no WhatsApp provider: the share sheet is the delivery
+  // path) | 'failed'. Opening the share sheet is NOT proof of delivery, so the
+  // app never says "bhej diya" for anything but 'sent'.
+  const [deliveryStatus, setDeliveryStatus] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
   const [billUrl, setBillUrl] = useState(null); // set when the bill PNG exists but the send failed
   const [credit, setCredit] = useState(false); // udaar toggle shown during the countdown
@@ -223,7 +227,15 @@ export default function HandsFreeScreen() {
       // report counts it under outstanding instead of paid.
       const result = await finalizeBill(txnId, cleanPhone, creditRef.current ? 'credit' : 'paid');
       setSendResult(result.send_result);
-      setStateSafe(S.DONE);
+      // Older backends only report send_result.status.
+      const delivery = result.delivery_status
+        ?? (result.send_result?.status === 'simulated' ? 'simulated' : 'sent');
+      setDeliveryStatus(delivery);
+      // The sale itself is saved either way; keep the bill on screen so it can
+      // be shared even when the server could not message the customer.
+      if (result.bill_filename) setBillUrl(`${BASE_URL}/bills/${result.bill_filename}`);
+      if (result.send_error) setErrorMsg(errorMessage(result.send_error));
+      setStateSafe(delivery === 'sent' ? S.DONE : S.FAILED);
     } catch (err) {
       const msg = errorMessage(err, 'Server se connect nahi hua');
       console.error('autoSend error:', msg, err);
@@ -281,7 +293,11 @@ export default function HandsFreeScreen() {
     try {
       const result = await sendBill(txnId);
       setSendResult(result.send_result);
-      setStateSafe(S.DONE);
+      const delivery = result.delivery_status
+        ?? (result.send_result?.status === 'simulated' ? 'simulated' : 'sent');
+      setDeliveryStatus(delivery);
+      setErrorMsg(null);
+      setStateSafe(delivery === 'sent' ? S.DONE : S.FAILED);
     } catch (err) {
       setErrorMsg(errorMessage(err, 'Server se connect nahi hua'));
       setStateSafe(S.FAILED);
@@ -292,6 +308,7 @@ export default function HandsFreeScreen() {
     clearCountdown();
     setItems([]); setTotal(0); setTxnId(null); setPhoneSafe(null);
     setLastHeard(''); setParseError(null); setSendResult(null); setErrorMsg(null);
+    setDeliveryStatus(null);
     setPhoneHint(null);
     setBillUrl(null);
     setSecondsLeft(COUNTDOWN_SEC);
@@ -310,13 +327,11 @@ export default function HandsFreeScreen() {
 
   // ── Done ─────────────────────────────────────────────────────────────────
   if (appState === S.DONE) {
-    const sim = sendResult?.status === 'simulated';
     return (
       <View style={st.centeredScreen}>
         <Text style={st.doneEmoji}>✅</Text>
         <Text style={st.doneTitle}>Bill Bhej Diya!</Text>
         <Text style={st.donePhone}>{detectedPhone}</Text>
-        {sim && <Text style={st.simNote}>(Test mode — backend console mein dekho)</Text>}
         <TouchableOpacity style={st.newSaleBtn} onPress={handleNewSale}>
           <Text style={st.newSaleBtnText}>Agla Customer →</Text>
         </TouchableOpacity>
@@ -326,13 +341,19 @@ export default function HandsFreeScreen() {
 
   // ── Send failed, bill survived ───────────────────────────────────────────
   if (appState === S.FAILED) {
+    // 'simulated' = no server-side WhatsApp: this is the NORMAL success screen
+    // for the free share-sheet flow, not an error.
+    const shareOnly = deliveryStatus === 'simulated';
     return (
       <View style={st.centeredScreen}>
-        <Text style={st.errorEmoji}>{'🚕'}</Text>
-        <Text style={st.failedTitle}>Bill ban gayi — bhej nahi paye</Text>
-        {!!errorMsg && <Text style={st.errorDetail}>{errorMsg}</Text>}
+        <Text style={st.errorEmoji}>{shareOnly ? '✅' : '🚕'}</Text>
+        <Text style={shareOnly ? st.readyTitle : st.failedTitle}>
+          {shareOnly ? 'Bill ban gayi — WhatsApp pe bhejein' : 'Bill ban gayi — bhej nahi paye'}
+        </Text>
+        {!shareOnly && !!errorMsg && <Text style={st.errorDetail}>{errorMsg}</Text>}
         {!!billUrl && <Image source={{ uri: billUrl }} style={st.billThumb} resizeMode="contain" />}
         {!!detectedPhone && <Text style={st.failedPhone}>{detectedPhone} pe bhejni hai</Text>}
+        {shareOnly && <Text style={st.simNote}>Bill save ho gayi. Neeche button se customer ko bhejein.</Text>}
         <TouchableOpacity
           style={[st.shareBtn, sharing && { opacity: 0.6 }]}
           onPress={shareBill}
@@ -342,11 +363,15 @@ export default function HandsFreeScreen() {
             {sharing ? 'Khol raha hoon...' : 'WhatsApp se bhejein (free)'}
           </Text>
         </TouchableOpacity>
-        <TouchableOpacity style={st.newSaleBtn} onPress={retrySend}>
-          <Text style={st.newSaleBtnText}>Server se bhejein</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={st.skipBtn} onPress={handleNewSale}>
-          <Text style={st.skipBtnText}>Chhod do — Agla Customer →</Text>
+        {!shareOnly && (
+          <TouchableOpacity style={st.newSaleBtn} onPress={retrySend}>
+            <Text style={st.newSaleBtnText}>Server se bhejein</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity style={shareOnly ? st.newSaleBtn : st.skipBtn} onPress={handleNewSale}>
+          <Text style={shareOnly ? st.newSaleBtnText : st.skipBtnText}>
+            {shareOnly ? 'Agla Customer →' : 'Chhod do — Agla Customer →'}
+          </Text>
         </TouchableOpacity>
       </View>
     );
@@ -620,6 +645,7 @@ const st = StyleSheet.create({
   tapHint: { color: colors.sub, fontSize: 13 },
 
   failedTitle: { color: colors.orange, fontSize: 22, fontWeight: '800', marginBottom: 12 },
+  readyTitle: { color: colors.green, fontSize: 22, fontWeight: '800', marginBottom: 12, textAlign: 'center' },
   shareBtn: {
     backgroundColor: colors.whatsapp, borderRadius: 14, ...shadow, // WhatsApp green
     paddingVertical: 16, paddingHorizontal: 40, marginTop: 8, marginBottom: 10,

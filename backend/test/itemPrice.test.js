@@ -30,7 +30,10 @@ test("bad price/index inputs cannot change a bill, including through the API", a
     { product_name: "Soap", quantity: 2, price: 10, line_total: 20 },
   ] });
   const router = require("../src/routes/sale");
-  const handler = router.stack.find(l => l.route?.path === "/update-item-price").route.stack[0].handle;
+  // Last layer = the handler itself; the layers before it (shopGate) are covered
+  // by routes.ownership.test.js, so the shop is supplied directly here.
+  const routeStack = router.stack.find(l => l.route?.path === "/update-item-price").route.stack;
+  const handler = routeStack[routeStack.length - 1].handle;
   const bad = [
     ...[-1, Infinity, -Infinity, NaN, "junk", "", " ", null, undefined, true, false, [], {}]
       .map(price => ({ item_index: 0, price })),
@@ -40,7 +43,7 @@ test("bad price/index inputs cannot change a bill, including through the API", a
   for (const input of bad) {
     await assert.rejects(db.updateItemPrice(txn.transaction_id, input.item_index, input.price));
     const res = { code: 200, status(code) { this.code = code; return this; }, json(body) { this.body = body; } };
-    await handler({ body: { transaction_id: txn.transaction_id, ...input } }, res);
+    await handler({ shop: { shop_id: "price_test" }, header: () => undefined, query: {}, body: { transaction_id: txn.transaction_id, ...input } }, res);
     assert.equal(res.code, 400, `must reject ${JSON.stringify(input)}`);
   }
   assert.deepEqual(await db.getTransaction(txn.transaction_id), txn);

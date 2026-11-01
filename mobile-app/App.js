@@ -29,6 +29,7 @@ import BillPreviewScreen from './screens/BillPreviewScreen';
 import VoiceEnrollScreen from './screens/VoiceEnrollScreen';
 import ShopSelectScreen from './screens/ShopSelectScreen';
 import { ShopProvider, useShop } from './services/ShopContext';
+import { warmUpServer } from './services/api';
 import { colors, shadow } from './theme';
 
 const Stack = createNativeStackNavigator();
@@ -137,6 +138,7 @@ function ShopGate() {
 }
 
 export default function App() {
+  React.useEffect(() => { warmUpServer(); }, []);
   return (
     <SafeAreaProvider>
       <ShopProvider>

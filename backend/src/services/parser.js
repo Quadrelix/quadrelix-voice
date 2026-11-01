@@ -508,7 +508,20 @@ async function parseWithLLM(text) {
 async function parseSaleItems(text) {
   if (process.env.GEMINI_API_KEY) {
     try {
-      return await parseWithLLM(text);
+      // Deadline: a hung Gemini call must not hold the shopkeeper at the counter.
+      // Past it, the offline parser answers instead.
+      let timer;
+      const deadline = new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("Gemini timed out")),
+          Number(process.env.GEMINI_TIMEOUT_MS) || 8000
+        );
+      });
+      try {
+        return await Promise.race([parseWithLLM(text), deadline]);
+      } finally {
+        clearTimeout(timer);
+      }
     } catch (err) {
       console.warn("LLM parse failed, falling back to regex parser:", err.message);
     }

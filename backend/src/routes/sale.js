@@ -14,24 +14,23 @@ const { hasItemContent, matchPriceFill } = require("../services/utterance");
 const { autoFillPrices } = require("../services/productMatch");
 const { dailyReport, toISTDate } = require("../services/report");
 const voice = require("../services/voiceVerify");
+const { rateLimit, concurrency, lockout, clientIp } = require("../middleware/limits");
 
 // ---------------------------------------------------------------------------
-// Shop resolution
+// Shop resolution and ownership
 // ---------------------------------------------------------------------------
-// Every command a shop makes arrives with its shop code. The code is what the
-// owner typed once in the app; it is NOT a secret (it selects a shop, it does
-// not authorise an account) — the pilot relies on stores being physical, not
-// on the code being unguessable. Admin routes are the ones behind a token.
+// Every command a shop makes arrives with its shop code (X-Shop-Code). The code
+// is the pilot's credential: it selects the shop AND authorises the caller, so
+// it is long enough to be unguessable at API speed (32^6) and wrong guesses are
+// locked out per IP. A transaction id is NOT a credential: every route that
+// touches a transaction first checks that it belongs to the shop named by the
+// request, so knowing (or guessing) another shop's id gets a 404.
 //
 // Resolution order:
 //   1. X-Shop-Code header   — the app's normal path
 //   2. ?shop_code=          — curl / debugging
 //   3. ?shop_id= with a valid ADMIN_TOKEN — admin tooling
-//
-// Transactions do NOT need this: a transaction id is unique and carries its
-// own shop_id, which is the right ownership rule for its bill, report row and
-// send. Scoping those by a request header would let one shop read another's
-// bill by guessing an id.
+//   4. the legacy demo shop — only when ALLOW_LEGACY_SHOP=1 (local debugging)
 
 let legacyShopCache = null; // shop_1 era data, demo/legacy only
 
@@ -42,11 +41,9 @@ function adminTokenOk(req) {
   return given && given === token;
 }
 
-/**
- * resolveShop(req) -> shop row, or null when the request names no valid shop.
- * Caches the legacy fallback so an old app build without a shop code can
- * still be debugged locally.
- */
+const shopCodeLockout = lockout({ windowMs: 15 * 60 * 1000, maxFailures: 20 });
+const pinLockout = lockout({ windowMs: 15 * 60 * 1000, maxFailures: 10 });
+
 async function resolveShop(req) {
   const code = req.header("X-Shop-Code") || req.query.shop_code;
   if (code) return (await db.getShopByCode(code)) || null;
@@ -54,28 +51,103 @@ async function resolveShop(req) {
   const shopId = req.query.shop_id;
   if (shopId && adminTokenOk(req)) return (await db.getShop(shopId)) || null;
 
-  // No shop named at all.
-  const legacy = process.env.LEGACY_SHOP_ID || "legacy_demo";
-  if (!legacyShopCache) legacyShopCache = await db.getShop(legacy);
-  return legacyShopCache || null;
+  if (process.env.ALLOW_LEGACY_SHOP === "1") {
+    const legacy = process.env.LEGACY_SHOP_ID || "legacy_demo";
+    if (!legacyShopCache) legacyShopCache = await db.getShop(legacy);
+    return legacyShopCache || null;
+  }
+  return null;
 }
 
-// Express helper: resolve, or answer 404/400 and return null.
+// Express helper: resolve the shop (once per request), or answer 401/404/429
+// and return null.
 async function requireShop(req, res) {
+  if (req.shop) return req.shop;
+  if (shopCodeLockout.check(req, res)) return null;
+
+  const hadCode = Boolean(req.header("X-Shop-Code") || req.query.shop_code);
   const shop = await resolveShop(req);
   if (!shop) {
-    res.status(404).json({
-      error: "Unknown shop code",
+    if (hadCode) shopCodeLockout.fail(req);
+    res.status(hadCode ? 404 : 401).json({
+      error: hadCode ? "Unknown shop code" : "Shop code required",
       hint: "App me dukaan ka code daalein.",
     });
     return null;
   }
+  req.shop = shop;
   return shop;
 }
 
-const UPLOAD_DIR = path.join(__dirname, "..", "..", "uploads");
+// Middleware form: runs BEFORE multer so an unauthenticated caller can never
+// make the server accept (or write to disk) an upload.
+async function shopGate(req, res, next) {
+  if (await requireShop(req, res)) next();
+}
+
+/**
+ * The only way a route may obtain a transaction by id. Returns
+ * { shop, transaction } or answers 404 — the SAME 404 for "no such id" and
+ * "someone else's id", so ids cannot be probed.
+ */
+async function ownedTransaction(req, res, transactionId) {
+  const shop = await requireShop(req, res);
+  if (!shop) return null;
+  const transaction = transactionId ? await db.getTransaction(String(transactionId)) : null;
+  if (!transaction || transaction.shop_id !== shop.shop_id) {
+    res.status(404).json({ error: "Transaction not found" });
+    return null;
+  }
+  return { shop, transaction };
+}
+
+// One error shape for every route. Frozen bills are a conflict (409), an
+// upstream timeout is a gateway timeout (504), everything else keeps the old 400.
+function sendError(res, err, status = 400) {
+  if (err && err.code === "bill_frozen") {
+    return res.status(409).json({ error: err.message, code: "bill_frozen" });
+  }
+  if (err && (err.code === "ECONNABORTED" || err.code === "ETIMEDOUT")) {
+    return res.status(504).json({ error: "Awaaz service dheemi hai — dobara boliye." });
+  }
+  return res.status(status).json({ error: err && err.message ? err.message : "Request failed" });
+}
+
+// ---------------------------------------------------------------------------
+// Upload and rate limits. Audio endpoints spend real money (Sarvam), so they are
+// gated by shop first, limited per IP / shop / day / in-flight, and size-capped.
+// ---------------------------------------------------------------------------
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, "..", "..", "uploads");
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-const upload = multer({ dest: UPLOAD_DIR });
+
+const AUDIO_MAX_BYTES = 5 * 1024 * 1024; // a 30 s m4a is ~500 KB
+const upload = multer({
+  dest: UPLOAD_DIR,
+  limits: { fileSize: AUDIO_MAX_BYTES, files: 1, fields: 8, parts: 12 },
+  fileFilter(req, file, cb) {
+    if (/^audio\//.test(file.mimetype) || file.mimetype === "video/mp4") return cb(null, true);
+    cb(Object.assign(new Error("Sirf audio file chalegi"), { status: 415 }));
+  },
+});
+
+const byShop = (req) => req.shop?.shop_id;
+const audioLimits = [
+  rateLimit({ windowMs: 60 * 1000, max: 60, key: clientIp }),
+  rateLimit({ windowMs: 60 * 1000, max: 30, key: byShop }),
+  rateLimit({
+    windowMs: 24 * 60 * 60 * 1000,
+    max: Number(process.env.STT_DAILY_LIMIT) || 1000,
+    key: byShop,
+    message: "Aaj ki voice limit poori ho gayi — kal dobara try karein.",
+  }),
+  concurrency({ max: 3, key: byShop }),
+];
+const textLimits = [rateLimit({ windowMs: 60 * 1000, max: 90, key: byShop })];
+
+// Temp upload cleanup — always, success or failure.
+function discardUpload(req) {
+  if (req.file) fs.unlink(req.file.path, () => {});
+}
 
 // Parser shape -> stored shape. Shared by /parse-item and /utterance so the
 // line_total arithmetic exists in exactly one place.
@@ -103,16 +175,16 @@ function toStoredItem(p) {
  * Returns: { text: string }
  * The app then calls /parse-item with that text, same as the typed flow.
  */
-router.post("/transcribe", upload.single("audio"), async (req, res) => {
+router.post("/transcribe", shopGate, ...audioLimits, upload.single("audio"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "audio file is required" });
     const text = await transcribeAudio(req.file.path);
-    fs.unlink(req.file.path, () => {}); // cleanup temp file, don't block response
     res.json({ text });
-   } catch (err) {
+  } catch (err) {
     console.error("TRANSCRIBE ERROR:", err.message);
-    if (req.file) fs.unlink(req.file.path, () => {});
-    res.status(400).json({ error: err.message });
+    sendError(res, err);
+  } finally {
+    discardUpload(req);
   }
 });
 
@@ -125,13 +197,16 @@ router.post("/transcribe", upload.single("audio"), async (req, res) => {
  * body: { text: string, transaction_id?: string }
  * If transaction_id is omitted, a new transaction is started.
  */
-router.post("/parse-item", async (req, res) => {
+router.post("/parse-item", shopGate, ...textLimits, async (req, res) => {
   try {
     const { text, transaction_id } = req.body;
     if (!text) return res.status(400).json({ error: "text is required" });
+    const shop = req.shop;
 
-    const shop = await requireShop(req, res);
-    if (!shop) return;
+    if (transaction_id) {
+      const owned = await ownedTransaction(req, res, transaction_id);
+      if (!owned) return;
+    }
 
     const parsedItems = await parseSaleItems(text);
     // A price the shopkeeper didn't say can come from THIS shop's catalog —
@@ -150,7 +225,7 @@ router.post("/parse-item", async (req, res) => {
 
     res.json({ transaction, parsed_items: newItems, missing_price_count: missingPriceCount });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    sendError(res, err);
   }
 });
 
@@ -158,16 +233,17 @@ router.post("/parse-item", async (req, res) => {
  * Fill in a price for an item that came back without one.
  * body: { transaction_id, item_index, price }
  */
-router.post("/update-item-price", async (req, res) => {
+router.post("/update-item-price", shopGate, async (req, res) => {
   try {
     const { transaction_id, item_index, price } = req.body;
     if (!transaction_id || item_index == null || price == null) {
       return res.status(400).json({ error: "transaction_id, item_index, and price are required" });
     }
+    if (!(await ownedTransaction(req, res, transaction_id))) return;
     const transaction = await db.updateItemPrice(transaction_id, item_index, price);
     res.json({ transaction });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    sendError(res, err);
   }
 });
 
@@ -175,83 +251,131 @@ router.post("/update-item-price", async (req, res) => {
  * STEP 2 — Owner speaks the contact number, confirms "yes".
  * body: { transaction_id: string, phone: string }
  */
-router.post("/confirm-contact", async (req, res) => {
+router.post("/confirm-contact", shopGate, async (req, res) => {
   try {
     const { transaction_id, phone } = req.body;
     if (!transaction_id || !phone) {
       return res.status(400).json({ error: "transaction_id and phone are required" });
     }
-    const cleanPhone = phone.replace(/\D/g, "");
+    const cleanPhone = String(phone).replace(/\D/g, "");
     if (cleanPhone.length < 10) {
       return res.status(400).json({ error: "That doesn't look like a valid phone number" });
     }
+    if (!(await ownedTransaction(req, res, transaction_id))) return;
     const transaction = await db.setCustomerPhone(transaction_id, cleanPhone);
     res.json({ transaction });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    sendError(res, err);
   }
 });
 
+// A bill PNG is re-creatable from the saved sale at any time, so a missing file
+// (Render's disk is wiped on restart) is rebuilt instead of failing the send.
+async function ensureBillFile(transaction, shop) {
+  if (transaction.bill_image_path && fs.existsSync(transaction.bill_image_path)) {
+    return transaction.bill_image_path;
+  }
+  return generateBillImage({ transaction, shop });
+}
+
+function billFilename(transaction) {
+  return transaction.bill_image_path ? path.basename(transaction.bill_image_path) : null;
+}
+
 /**
- * STEP 3 — Generate the bill image + UPI QR, save it.
+ * STEP 3 — Generate the bill image + UPI QR, save it. This FINALIZES the sale
+ * (stock moves, the bill freezes); calling it again returns the same bill.
  * body: { transaction_id: string }
  */
-router.post("/generate-bill", async (req, res) => {
+router.post("/generate-bill", shopGate, async (req, res) => {
   try {
-    const { transaction_id } = req.body;
-    const transaction = await db.getTransaction(transaction_id);
-    if (!transaction) return res.status(404).json({ error: "Transaction not found" });
+    const owned = await ownedTransaction(req, res, req.body.transaction_id);
+    if (!owned) return;
+    const { shop, transaction } = owned;
 
-    const hasMissingPrice = transaction.items.some((i) => i.price == null);
-    if (hasMissingPrice) {
+    if (transaction.finalized_at) {
+      return res.json({
+        transaction,
+        bill_image_path: transaction.bill_image_path,
+        bill_filename: billFilename(transaction),
+        already_finalized: true,
+      });
+    }
+    if (!transaction.items.length) {
+      return res.status(400).json({ error: "This bill has no items on it yet" });
+    }
+    if (transaction.items.some((i) => i.price == null)) {
       return res.status(400).json({ error: "Some items are missing a price — fill those in first" });
     }
 
-    const shop = await db.getShop(transaction.shop_id);
     const billImagePath = await generateBillImage({ transaction, shop });
-    const updated = await db.markBillGenerated(transaction_id, billImagePath);
+    const { transaction: updated, already_finalized } = await db.finalizeSale(
+      transaction.transaction_id,
+      { bill_image_path: billImagePath }
+    );
 
     // bill_image_path is a server-side filesystem path and differs by OS
     // (backslashes on Windows) — clients should use bill_filename with the
     // /bills static route instead of trying to parse the path themselves.
     res.json({
       transaction: updated,
-      bill_image_path: billImagePath,
-      bill_filename: path.basename(billImagePath),
+      bill_image_path: updated.bill_image_path,
+      bill_filename: billFilename(updated),
+      already_finalized,
     });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    sendError(res, err);
   }
 });
+
+// Send (or re-send) and record what actually happened. Delivery state lives on
+// its own column: 'simulated' (no provider configured) and 'failed' never turn
+// into 'sent', and a failure never un-does the sale.
+async function deliverBill({ transaction, shop }) {
+  const billImagePath = await ensureBillFile(transaction, shop);
+  try {
+    const result = await sendBillOnWhatsApp({
+      phone: transaction.customer_phone,
+      billImagePath,
+      totalAmount: transaction.total_amount,
+      shopName: shop.shop_name,
+    });
+    const status = result.status === "simulated" ? "simulated" : "sent";
+    const updated = await db.markDelivery(transaction.transaction_id, status);
+    return { transaction: updated, send_result: result, delivery_status: status };
+  } catch (err) {
+    await db.markDelivery(transaction.transaction_id, "failed").catch(() => {});
+    err.deliveryFailed = true;
+    throw err;
+  }
+}
 
 /**
  * STEP 4 — Send the generated bill + QR to the customer's WhatsApp.
  * body: { transaction_id: string }
  */
-router.post("/send-bill", async (req, res) => {
+router.post("/send-bill", shopGate, async (req, res) => {
   try {
-    const { transaction_id } = req.body;
-    const transaction = await db.getTransaction(transaction_id);
-    if (!transaction) return res.status(404).json({ error: "Transaction not found" });
+    const owned = await ownedTransaction(req, res, req.body.transaction_id);
+    if (!owned) return;
+    const { shop, transaction } = owned;
     if (!transaction.customer_phone) {
       return res.status(400).json({ error: "No customer phone on this transaction yet" });
     }
     if (!transaction.bill_image_path) {
       return res.status(400).json({ error: "Bill image not generated yet" });
     }
-
-    const shop = await db.getShop(transaction.shop_id);
-    const result = await sendBillOnWhatsApp({
-      phone: transaction.customer_phone,
-      billImagePath: transaction.bill_image_path,
-      totalAmount: transaction.total_amount,
-      shopName: shop.shop_name,
-    });
-
-    const updated = await db.markSent(transaction_id);
-    res.json({ transaction: updated, send_result: result });
+    // Already delivered: a repeat tap must not message the customer twice.
+    if (transaction.delivery_status === "sent") {
+      return res.json({
+        transaction,
+        send_result: { status: "sent", already_sent: true },
+        delivery_status: "sent",
+      });
+    }
+    res.json(await deliverBill({ transaction, shop }));
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    sendError(res, err);
   }
 });
 
@@ -285,7 +409,7 @@ router.post("/send-bill", async (req, res) => {
  * decision to send a real customer a real bill with no confirming tap, and it
  * belongs in one testable place instead of in a React state machine.
  */
-router.post("/utterance", async (req, res) => {
+router.post("/utterance", shopGate, ...textLimits, async (req, res) => {
   try {
     const { text, transaction_id } = req.body;
     if (!text) return res.status(400).json({ error: "text is required" });
@@ -294,14 +418,19 @@ router.post("/utterance", async (req, res) => {
     // left in, a 10-digit run is a quantity, and the bill reads "9876543210
     // Aam".
     const { phone, partial, rest } = findPhoneNumber(text);
-
-    const shop = await requireShop(req, res);
-    if (!shop) return;
+    const shop = req.shop;
 
     let transaction = null;
     if (transaction_id) {
-      transaction = await db.getTransaction(transaction_id);
-      if (!transaction) return res.status(404).json({ error: "Transaction not found" });
+      const owned = await ownedTransaction(req, res, transaction_id);
+      if (!owned) return;
+      transaction = owned.transaction;
+      if (transaction.finalized_at) {
+        return res.status(409).json({
+          error: "Ye bill pehle hi ban chuka hai — naya sale shuru karein.",
+          code: "bill_frozen",
+        });
+      }
     }
 
     let storedNewItems = [];
@@ -368,21 +497,29 @@ router.post("/utterance", async (req, res) => {
 
     res.json(response);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    sendError(res, err);
   }
 });
 
 /**
- * Attach the phone, render the bill, send it — in one call.
- * body: { transaction_id: string, phone: string }
+ * Attach the phone, render the bill, complete the sale, send it — in one call.
+ * body: { transaction_id: string, phone: string, payment_status?: 'paid'|'credit' }
  *
- * No new logic; this is /confirm-contact + /generate-bill + /send-bill in the
- * same order. It's one call because three round trips over shop wifi is slow at
- * the counter, and because a drop between them leaves a transaction with a
- * customer's phone attached and no bill ever sent — a silent half-failure the
- * shopkeeper only discovers when the customer complains.
+ * Order matters:
+ *   1. render the PNG            (no database writes — nothing to undo)
+ *   2. db.finalizeSale           (ONE database transaction: phone, payment,
+ *                                 bill marker, stock deduction, freeze)
+ *   3. send + record delivery    (after the commit; a failure here never
+ *                                 un-does the sale)
+ * It is idempotent: a retry after a dropped response finds the sale already
+ * finalized and returns it — no second stock deduction, no second message.
+ *
+ * Response: { transaction, bill_filename, send_result, delivery_status,
+ *             send_error?, already_finalized? }. delivery_status is 'sent',
+ * 'simulated' (no WhatsApp provider — the app offers the share sheet) or
+ * 'failed'. The HTTP status is 200 in all three: the SALE succeeded.
  */
-router.post("/finalize", async (req, res) => {
+router.post("/finalize", shopGate, async (req, res) => {
   try {
     const { transaction_id, phone } = req.body;
     if (!transaction_id || !phone) {
@@ -396,8 +533,22 @@ router.post("/finalize", async (req, res) => {
       return res.status(400).json({ error: "That doesn't look like a valid phone number" });
     }
 
-    let transaction = await db.getTransaction(transaction_id);
-    if (!transaction) return res.status(404).json({ error: "Transaction not found" });
+    const owned = await ownedTransaction(req, res, transaction_id);
+    if (!owned) return;
+    const { shop } = owned;
+    let transaction = owned.transaction;
+
+    // Retry of a sale that already went through: answer with what exists.
+    if (transaction.finalized_at) {
+      return res.json({
+        transaction,
+        bill_filename: billFilename(transaction),
+        send_result: { status: transaction.delivery_status },
+        delivery_status: transaction.delivery_status,
+        already_finalized: true,
+      });
+    }
+
     if (!transaction.items.length) {
       return res.status(400).json({ error: "This bill has no items on it yet" });
     }
@@ -405,35 +556,47 @@ router.post("/finalize", async (req, res) => {
       return res.status(400).json({ error: "Some items are missing a price — fill those in first" });
     }
 
-    transaction = await db.setCustomerPhone(transaction_id, cleanPhone);
-
     // Udaar: the sale is real, only the payment is deferred. 'credit' lands
     // in the day's outstanding total on the report; anything else is 'paid'.
     const paymentStatus = req.body.payment_status === "credit" ? "credit" : "paid";
-    if (paymentStatus === "credit") {
-      transaction = await db.setPaymentStatus(transaction_id, "credit");
+
+    const billImagePath = await generateBillImage({
+      transaction: { ...transaction, customer_phone: cleanPhone },
+      shop,
+    });
+    const done = await db.finalizeSale(transaction_id, {
+      phone: cleanPhone,
+      payment_status: paymentStatus,
+      bill_image_path: billImagePath,
+    });
+    transaction = done.transaction;
+
+    // Two requests raced and the other one won: it owns the send.
+    if (done.already_finalized) {
+      return res.json({
+        transaction,
+        bill_filename: billFilename(transaction),
+        send_result: { status: transaction.delivery_status },
+        delivery_status: transaction.delivery_status,
+        already_finalized: true,
+      });
     }
 
-    const shop = await db.getShop(transaction.shop_id);
-    const billImagePath = await generateBillImage({ transaction, shop });
-    transaction = await db.markBillGenerated(transaction_id, billImagePath);
-
-    const sendResult = await sendBillOnWhatsApp({
-      phone: cleanPhone,
-      billImagePath,
-      totalAmount: transaction.total_amount,
-      shopName: shop.shop_name,
-    });
-
-    transaction = await db.markSent(transaction_id);
-
-    res.json({
-      transaction,
-      bill_filename: path.basename(billImagePath),
-      send_result: sendResult,
-    });
+    const body = { bill_filename: billFilename(transaction) };
+    try {
+      Object.assign(body, await deliverBill({ transaction, shop }));
+    } catch (err) {
+      console.error("FINALIZE SEND ERROR:", err.message);
+      Object.assign(body, {
+        transaction: await db.getTransaction(transaction_id),
+        send_result: { status: "failed" },
+        delivery_status: "failed",
+        send_error: err.message,
+      });
+    }
+    res.json(body);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    sendError(res, err);
   }
 });
 
@@ -600,7 +763,7 @@ router.get("/transactions", async (req, res) => {
   if (!shop) return;
   const transactions = (await db.listTransactions(shop.shop_id))
     .filter((t) => ["confirmed", "sent"].includes(t.status))
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .sort((a, b) => new Date(b.finalized_at || b.created_at) - new Date(a.finalized_at || a.created_at))
     .slice(0, limit);
   res.json({ transactions });
 });
@@ -624,12 +787,13 @@ router.get("/customers", async (req, res) => {
       total_spent: 0,
       credit_outstanding: 0,
       purchases: 0,
-      last_purchase: t.created_at,
+      last_purchase: t.finalized_at || t.created_at,
     };
     agg.total_spent += t.total_amount || 0;
     if (t.payment_status === "credit") agg.credit_outstanding += t.total_amount || 0;
     agg.purchases += 1;
-    if (new Date(t.created_at) > new Date(agg.last_purchase)) agg.last_purchase = t.created_at;
+    const soldAt = t.finalized_at || t.created_at;
+    if (new Date(soldAt) > new Date(agg.last_purchase)) agg.last_purchase = soldAt;
     byPhone.set(phone, agg);
   }
   const customers = [...byPhone.values()].sort(
@@ -654,15 +818,12 @@ router.get("/customers", async (req, res) => {
  * A rejection is HTTP 200 with empty text — to the app it looks like silence,
  * which is exactly how a customer talking should feel. It is not an error.
  */
-router.post("/verify-and-transcribe", upload.single("audio"), async (req, res) => {
+router.post("/verify-and-transcribe", shopGate, ...audioLimits, upload.single("audio"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "audio file required" });
   try {
-    const shop = await requireShop(req, res);
-    if (!shop) { fs.unlink(req.file.path, () => {}); return; }
-    const gate = await runVoiceGate(req.file.path, shop.shop_id);
+    const gate = await runVoiceGate(req.file.path, req.shop.shop_id);
 
     if (!gate.allow) {
-      fs.unlink(req.file.path, () => {});
       return res.json({
         text: "",
         allowed: false,
@@ -673,15 +834,14 @@ router.post("/verify-and-transcribe", upload.single("audio"), async (req, res) =
     }
 
     // No speech in the clip is not a failure — the owner said nothing, or the
-// clip was music/noise. Return empty text exactly like a rejected clip, so
-// the app treats both as "nothing to bill".
+    // clip was music/noise. Return empty text exactly like a rejected clip, so
+    // the app treats both as "nothing to bill".
     let text = "";
     try {
       text = (await transcribeAudio(req.file.path)) || "";
     } catch (e) {
       if (!/did not return a transcript/i.test(e.message)) throw e;
     }
-    fs.unlink(req.file.path, () => {});
     return res.json({
       text,
       allowed: true,
@@ -690,14 +850,15 @@ router.post("/verify-and-transcribe", upload.single("audio"), async (req, res) =
       lock_state: gate.lockState,
     });
   } catch (err) {
-    fs.unlink(req.file.path, () => {});
-    return res.status(400).json({ error: err.message });
+    return sendError(res, err);
+  } finally {
+    discardUpload(req);
   }
 });
 
 // Verify + decide, with the service error folded into the fail mode.
 async function runVoiceGate(audioPath, shopId) {
-  const mode = voice.mode();
+  const mode = voice.mode(shopId);
   const failMode = voice.failMode();
   if (mode === "off") {
     return voice.decide({ mode: "off", failMode });
@@ -728,18 +889,16 @@ async function runVoiceGate(audioPath, shopId) {
 // Keep in sync with VoiceEnrollScreen's five sentences.
 const ENROLL_TARGET_CLIPS = 5;
 
-router.post("/enroll-voice", upload.single("audio"), async (req, res) => {
+router.post("/enroll-voice", shopGate, ...audioLimits, upload.single("audio"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "audio file required" });
-  const shop = await requireShop(req, res);
-  if (!shop) { fs.unlink(req.file.path, () => {}); return; }
+  const shop = req.shop;
   try {
     // Enrollment completes after ENROLL_TARGET_CLIPS clips. Until then more
     // clips are the normal flow; after that, a new voice can only replace the
-    // profile through the PIN-gated reset — otherwise anyone on the network
-    // could overwrite the owner's voice lock.
+    // profile through the PIN-gated reset — otherwise anyone holding this
+    // shop's code could overwrite the owner's voice lock.
     const status = await voice.getVoiceStatus(shop.shop_id).catch(() => null);
     if (status?.enrolled && (status.samples || 0) >= ENROLL_TARGET_CLIPS) {
-      fs.unlink(req.file.path, () => {});
       return res.status(409).json({
         error: "Voice already registered. Re-enroll se pehle Voice Lock reset karein.",
         code: "already_enrolled",
@@ -747,7 +906,6 @@ router.post("/enroll-voice", upload.single("audio"), async (req, res) => {
     }
 
     const result = await voice.enrollSample(req.file.path, shop.shop_id);
-    fs.unlink(req.file.path, () => {});
 
     if (!result.ok) {
       return res.status(result.quality_rejected ? 422 : 400).json({
@@ -757,8 +915,9 @@ router.post("/enroll-voice", upload.single("audio"), async (req, res) => {
     }
     return res.json(result);
   } catch (err) {
-    fs.unlink(req.file.path, () => {});
     return res.status(400).json({ error: "Voice service se connect nahi hua: " + err.message });
+  } finally {
+    discardUpload(req);
   }
 });
 
@@ -775,7 +934,7 @@ router.get("/voice-status", async (req, res) => {
     res.json({
       enrolled: false,
       samples: 0,
-      mode: voice.mode(),
+      mode: voice.mode(shop.shop_id),
       service_up: false,
       error: err.message,
     });
@@ -786,43 +945,51 @@ router.get("/voice-status", async (req, res) => {
  * Delete the stored voice profile. Requires the admin PIN so a stranger
  * holding the phone (or on the network) can't quietly re-enroll their voice.
  */
-router.post("/voice-reset", async (req, res) => {
+// Admin PIN check shared by reset/override. Fails CLOSED: with no PIN
+// configured the action is disabled, never open. Wrong guesses are locked out.
+function adminPinOk(req, res) {
   const pin = process.env.VOICE_ADMIN_PIN;
   if (!pin) {
-    return res.status(503).json({ error: "VOICE_ADMIN_PIN not set in .env — reset disabled" });
+    res.status(503).json({ error: "VOICE_ADMIN_PIN not set — ye action band hai" });
+    return false;
   }
+  if (pinLockout.check(req, res)) return false;
   if (String(req.body?.pin || "") !== pin) {
-    return res.status(403).json({ error: "Ghalat PIN" });
+    pinLockout.fail(req);
+    res.status(403).json({ error: "Ghalat PIN" });
+    return false;
   }
-  const shop = await requireShop(req, res);
-  if (!shop) return;
+  return true;
+}
+
+router.post("/voice-reset", shopGate, async (req, res) => {
+  if (!adminPinOk(req, res)) return;
   try {
-    const result = await voice.resetVoice(shop.shop_id);
+    const result = await voice.resetVoice(req.shop.shop_id);
     res.json(result);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    sendError(res, err);
   }
 });
 
 /**
  * The third safety valve (PDF T7.4): an in-memory override so the owner can
  * switch the lock off for a bad day without editing .env and restarting.
+ * Scoped to the calling shop — one shop's bad day never changes another's.
  * Not persisted — a restart returns to the .env value on purpose.
  */
-router.post("/voice-override", (req, res) => {
-  const pin = process.env.VOICE_ADMIN_PIN;
-  if (pin && String(req.body?.pin || "") !== pin) {
-    return res.status(403).json({ error: "Ghalat PIN" });
-  }
+router.post("/voice-override", shopGate, (req, res) => {
+  if (!adminPinOk(req, res)) return;
+  const shopId = req.shop.shop_id;
   const value = String(req.body?.mode || "").toLowerCase();
   if (value === "off" || value === "shadow" || value === "enforce") {
-    voice.setOverride(value);
-    console.log(`[VOICE LOCK] runtime override -> ${value}`);
+    voice.setOverride(value, shopId);
+    console.log(`[VOICE LOCK] runtime override for ${shopId} -> ${value}`);
     return res.json({ mode: value, override: true });
   }
   if (value === "clear") {
-    voice.setOverride(null);
-    return res.json({ mode: voice.mode(), override: false });
+    voice.setOverride(null, shopId);
+    return res.json({ mode: voice.mode(shopId), override: false });
   }
   res.status(400).json({ error: "mode must be off | shadow | enforce | clear" });
 });
@@ -830,10 +997,10 @@ router.post("/voice-override", (req, res) => {
 /**
  * Convenience — fetch a transaction's current state.
  */
-router.get("/transaction/:id", async (req, res) => {
-  const transaction = await db.getTransaction(req.params.id);
-  if (!transaction) return res.status(404).json({ error: "Not found" });
-  res.json({ transaction });
+router.get("/transaction/:id", shopGate, async (req, res) => {
+  const owned = await ownedTransaction(req, res, req.params.id);
+  if (!owned) return;
+  res.json({ transaction: owned.transaction });
 });
 
 module.exports = router;

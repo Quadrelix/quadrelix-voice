@@ -6,8 +6,9 @@ automatic profit calculation, daily report, customers (udaar) — sab voice ya
 few taps me.
 
 ```
-backend/       Node.js + Express API  (JSON file DB, no database server needed)
-mobile-app/    React Native (Expo SDK 54) app — Expo Go se test hota hai
+backend/       Node.js + Express API  (PostgreSQL; tests use a temp JSON file)
+mobile-app/    React Native (Expo SDK 54) app — Expo Go ya EAS APK
+voice-service/ Python FastAPI — speaker verification (Voice Lock)
 ```
 
 ---
@@ -138,28 +139,34 @@ shows a "Voice Lock off" badge. Full runbook:
 
 ## Backend API (test ke liye handy)
 
+Har shop-wali request me dukaan ka code chahiye (`X-Shop-Code` header, ya
+`?shop_code=`). Bina code ke 401, galat code pe 404 (aur baar-baar galat code pe
+429 lockout). Ek shop doosre shop ki transaction/bill nahi dekh ya badal sakta.
+Local debugging me purana demo shop chahiye to `ALLOW_LEGACY_SHOP=1` set karo.
+Naya shop: `POST /api/admin/shops` (`ADMIN_TOKEN` ke saath).
+
 ```bash
 # Naya product (selling price OPTIONAL — kuch products ka fixed rate nahi hota)
 curl -X POST http://localhost:3000/api/products \
-  -H "Content-Type: application/json" \
+  -H "X-Shop-Code: ABC123" -H "Content-Type: application/json" \
   -d '{"name":"Aam","purchase_price":40,"stock_qty":10}'
 
 # Voice-utterance (items + number ek saath)
 curl -X POST http://localhost:3000/api/utterance \
-  -H "Content-Type: application/json" \
+  -H "X-Shop-Code: ABC123" -H "Content-Type: application/json" \
   -d '{"text":"2 aam 60 rupay number 9876543210"}'
 
 # Aaj ka report
-curl http://localhost:3000/api/report/daily
+curl -H "X-Shop-Code: ABC123" http://localhost:3000/api/report/daily
 
 # Saare products
-curl http://localhost:3000/api/products
+curl -H "X-Shop-Code: ABC123" http://localhost:3000/api/products
 
 # Recent sales
-curl "http://localhost:3000/api/transactions?limit=5"
+curl -H "X-Shop-Code: ABC123" "http://localhost:3000/api/transactions?limit=5"
 
 # Customers (udaar samet)
-curl http://localhost:3000/api/customers
+curl -H "X-Shop-Code: ABC123" http://localhost:3000/api/customers
 ```
 
 ---
@@ -168,7 +175,10 @@ curl http://localhost:3000/api/customers
 
 ```bash
 cd backend
-npm test        # 100 tests — offline, fast, koi API key nahi
+npm test        # ~145 tests — offline, fast, koi API key nahi
+# Real PostgreSQL ke tests (finalize/rollback/locking) bhi chalane ke liye:
+TEST_DATABASE_URL=postgres://user:pass@localhost:5432/scratch_db npm test
+# CI (.github/workflows/backend.yml) ye hamesha Postgres ke saath chalata hai.
 ```
 
 Tests kya cover karte hain: item parser (Hindi + English), phone number
@@ -185,14 +195,16 @@ backend/src/routes/sale.js        saare API endpoints
 backend/src/services/parser.js    text → sale items (offline regex + Gemini)
 backend/src/services/productMatch.js  catalog matching (conservative, no guessing)
 backend/src/services/report.js    daily report (IST) — profit, udaar, low stock
-backend/src/db/db.js              JSON file DB (atomic writes) — data.json
+backend/src/db/db.js              PostgreSQL data layer (finalizeSale = atomic sale completion)
+backend/src/app.js                Express app (limits, error handler); server.js sirf boot karta hai
+backend/src/middleware/limits.js  rate limit / concurrency / code-guess lockout
 mobile-app/screens/HomeScreen.js  dashboard
 mobile-app/screens/HandsFreeScreen.js  voice billing flow
 mobile-app/services/api.js        BASE_URL yahan badlo
 ```
 
 > ⚠️ **`.env` kabhi commit mat karo** — secrets hain. Already `.gitignore` me hai.
-> `backend/src/db/data.json` (runtime data) bhi git se bahar hai.
+> `backend/src/db/data.json` (sirf test/legacy runtime data) bhi git se bahar hai.
 
 ---
 

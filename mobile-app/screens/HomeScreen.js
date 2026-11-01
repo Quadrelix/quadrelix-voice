@@ -287,7 +287,7 @@ export default function HomeScreen() {
             />
             <SummaryTile
               icon="trending-up" fg={colors.orange} bg={colors.orangeSoft}
-              value={money(report?.total_profit)} label="Total Profit"
+              value={money(report?.total_profit)} label="Margin (known cost)"
             />
             <SummaryTile
               icon="cube" fg={colors.purple} bg={colors.purpleSoft}
