@@ -153,7 +153,12 @@ test("the day's numbers: sales, cost, profit, unknown cost, credit, low stock", 
   assert.strictEqual(report.transactions, 2);
   assert.strictEqual(report.total_sales, 225); // 175 + 50
   assert.strictEqual(report.total_cost, 3 * 18 + 5 * 8); // 94 — Chips' cost is unknown, not zero
-  assert.strictEqual(report.total_profit, 225 - 94);
+  // Margin covers only items with a known cost: Dettol 75 + Sabun 50 = 125
+  // revenue against 94 cost. Chips' 100 is NOT profit — its cost is unknown.
+  assert.strictEqual(report.total_profit, 125 - 94);
+  assert.strictEqual(report.known_cost_sales, 125);
+  assert.strictEqual(report.missing_cost_sales, 100);
+  assert.strictEqual(report.cost_coverage, 125 / 225);
   assert.strictEqual(report.unknown_cost_items, 1);
   assert.strictEqual(report.outstanding_credit, 50);
   assert.deepStrictEqual(report.best_sellers[0], { name: "Sabun", quantity: 5, revenue: 50 });

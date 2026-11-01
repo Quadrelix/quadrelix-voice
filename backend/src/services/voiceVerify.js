@@ -40,19 +40,22 @@ function validFailMode(value) {
 
 // Runtime override (set by /api/voice-override). In-memory by design: a
 // restart returns to the .env value, so a temporary "off" can't be forgotten
-// and silently become permanent.
-let runtimeOverride = null;
+// and silently become permanent. Keyed by shop so one shop's bad day never
+// changes another shop's lock; the "*" key is a process-wide override that only
+// code (not an HTTP route) may set.
+const overrides = new Map();
 
-function setOverride(value) {
-  runtimeOverride = value ? validMode(value) : null;
+function setOverride(value, shopId = "*") {
+  if (value) overrides.set(shopId, validMode(value));
+  else overrides.delete(shopId);
 }
 
-function getOverride() {
-  return runtimeOverride;
+function getOverride(shopId = "*") {
+  return overrides.get(shopId) ?? overrides.get("*") ?? null;
 }
 
-function mode() {
-  return runtimeOverride || validMode(process.env.VOICE_LOCK_MODE);
+function mode(shopId) {
+  return getOverride(shopId) || validMode(process.env.VOICE_LOCK_MODE);
 }
 
 function failMode() {
@@ -194,7 +197,7 @@ async function enrollSample(audioPath, shopId) {
  * mode is the lock in, and is the service actually up?
  */
 async function getVoiceStatus(shopId) {
-  if (mode() === "off") {
+  if (mode(shopId) === "off") {
     // Still report whether the service is reachable, so the badge is honest.
     let serviceUp = false;
     try {
@@ -213,7 +216,7 @@ async function getVoiceStatus(shopId) {
   return {
     enrolled: Boolean(res.data?.enrolled),
     samples: Number(res.data?.samples || 0),
-    mode: mode(),
+    mode: mode(shopId),
     service_up: true,
     threshold: res.data?.threshold,
   };

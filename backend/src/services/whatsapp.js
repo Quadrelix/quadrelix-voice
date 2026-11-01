@@ -59,8 +59,8 @@ async function sendViaTwilio({ phone, billImagePath, totalAmount, shopName }) {
 
   // India requires the customer's number in "whatsapp:+91XXXXXXXXXX" format
   let toNumber = phone.replace(/\D/g, "");
-  if (!toNumber.startsWith("91") && toNumber.length === 10) {
-    toNumber = "91" + toNumber; // assume Indian number if no country code given
+  if (toNumber.length === 10) {
+    toNumber = "91" + toNumber; // national number -> add India's country code
   }
 
   console.log(`[TWILIO] Sending to whatsapp:+${toNumber} from whatsapp:${TWILIO_WHATSAPP_NUMBER}`);

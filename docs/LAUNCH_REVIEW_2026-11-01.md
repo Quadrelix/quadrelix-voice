@@ -6,6 +6,23 @@ Scope: local source review of the Express API, PostgreSQL adapter/schema, billin
 
 Validation: `npm test` in `backend` passed **119/119** tests. The first sandboxed run failed to spawn workers; the approved run completed successfully. The database tests explicitly select the lowdb adapter through `DB_FILE`, so they do not validate PostgreSQL behavior. Small offline probes also reproduced the voice response mismatch, unknown-cost profit calculation, and an unauthenticated transaction read using a stubbed database and the real route handler. SQL and device-level findings below are source findings unless stated otherwise.
 
+## Status update (same day, after fixes)
+
+Items 1–6 of "Fix before external use" were addressed in code and covered by tests; items marked *open* below were not part of that pass.
+
+| # | Finding | Status |
+|---|---|---|
+| 1 | Voice discarded with lock off | **Fixed** — `allowed` is separate from `speaker_verified` (route + app + tests) |
+| 2 | Transaction IDs as authorization | **Fixed** — every transaction route checks the transaction belongs to the request's shop (same 404 for "missing" and "someone else's"); no shop code = 401; legacy demo fallback is opt-in (`ALLOW_LEGACY_SHOP=1`); wrong codes lock out the IP; voice reset/override fail closed without `VOICE_ADMIN_PIN`, overrides are per shop. Two-shop negative tests in `routes.ownership.test.js`. The shop code is still the only credential (no owner accounts/OTP yet) and `/bills/*.png` stays public behind unguessable UUID file names. |
+| 3 | PostgreSQL price-update SQL | **Fixed** (verified against real PostgreSQL) |
+| 4 | Non-atomic completion / stock | **Fixed** — `db.finalizeSale`: row lock + one DB transaction (bill marker, phone, payment, stock, freeze); retries and races return the existing sale. Finalized bills reject edits (409). Verified on real PostgreSQL incl. concurrent finalize and mid-sale rollback. Voids/corrections with inventory reversal are *open*. |
+| 5 | Share flow / delivery claims | **Fixed** — separate `delivery_status` (`none/simulated/sent/failed`); `status='sent'` only for a real provider send; no-provider success shows "Bill ban gayi — WhatsApp pe bhejein" with the share button. Delivery receipts / queue / templates are *open*. |
+| 6 | Unrestricted uploads | **Fixed** — shop gate before multer, 5 MB + audio-type filter, per-IP/per-shop/daily/in-flight limits, Sarvam (15 s) and Gemini (8 s) deadlines, central JSON error handler, temp files always removed. |
+| Report | Profit overstated | **Fixed** — `total_profit` is a margin over known-cost items only, with `cost_coverage` / `missing_cost_sales`; completed sales are dated by `finalized_at`. |
+| CI | PostgreSQL in CI | **Added** — `.github/workflows/backend.yml` runs the suite against a Postgres service. |
+
+Still open from the lists below: fractional stock, payment settlement/repayment, draft recovery after app kill, DB TLS verification (`rejectUnauthorized:false`), durable bill storage, Meta/Gupshup providers and templates, history query pagination, staging/backups/monitoring.
+
 ## What is already useful
 
 - A focused shop workflow: Hindi/Hinglish speech, catalog matching, missing-price handling, bill images, UPI QR, customer history, and daily reporting.

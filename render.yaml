@@ -11,10 +11,10 @@ services:
   - type: web
     name: quadrelix-voice-backend
     runtime: node
-    plan: free
+    plan: free                 # sleeps after 15 min idle (~1 min cold start); use a paid plan for real shops
     region: singapore          # closest to the shops
     rootDir: backend
-    buildCommand: npm install
+    buildCommand: npm ci       # reproducible: installs exactly what package-lock.json says
     startCommand: npm start
     healthCheckPath: /health
     envVars:
@@ -42,3 +42,10 @@ services:
       # /api/send-bill logs instead of failing.
       - key: WHATSAPP_PROVIDER
         value: ""
+      # Cost guard: voice clips one shop may send per day (Sarvam is billed per minute).
+      - key: STT_DAILY_LIMIT
+        value: "1000"
+      # Every request must carry a valid shop code; the demo-shop fallback stays
+      # off in production. Only set to "1" on a laptop for local debugging.
+      - key: ALLOW_LEGACY_SHOP
+        value: "0"

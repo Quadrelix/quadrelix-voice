@@ -1,42 +1,8 @@
 require("dotenv").config();
-const express = require("express");
-const cors = require("cors");
-const path = require("path");
-const fs = require("fs");
-
 const db = require("./db/db");
-const saleRoutes = require("./routes/sale");
-const adminRoutes = require("./routes/admin");
+const app = require("./app");
 const { checkWhatsAppConfig } = require("./services/whatsapp");
 const voice = require("./services/voiceVerify");
-
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-// Bill PNGs. On a laptop this is backend/generated_bills; on Render the disk
-// is ephemeral, so BILLS_DIR points at /tmp. Bills are regenerable and are
-// sent immediately, so losing old files is acceptable for the pilot.
-const BILLS_DIR = process.env.BILLS_DIR || path.join(__dirname, "..", "generated_bills");
-fs.mkdirSync(BILLS_DIR, { recursive: true });
-app.use("/bills", express.static(BILLS_DIR));
-
-app.use("/api/admin", adminRoutes);
-app.use("/api", saleRoutes);
-
-app.get("/", (req, res) => {
-  res.json({ status: "AI Business Assistant backend is running" });
-});
-
-// Health check for Render and for "is the database reachable?" during setup.
-app.get("/health", async (req, res) => {
-  try {
-    const shopCount = (await db.listShops()).length;
-    res.json({ ok: true, db: "up", shops: shopCount });
-  } catch (e) {
-    res.status(503).json({ ok: false, db: "down", error: e.message });
-  }
-});
 
 const PORT = process.env.PORT || 3000;
 

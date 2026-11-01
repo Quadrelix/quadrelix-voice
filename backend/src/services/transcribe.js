@@ -29,6 +29,10 @@ async function transcribeAudio(audioFilePath) {
         ...form.getHeaders(),
         "api-subscription-key": apiKey,
       },
+      // Upstream deadline, shorter than the app's own request timeout so the
+      // backend answers with a clear error instead of the app giving up first.
+      timeout: Number(process.env.SARVAM_TIMEOUT_MS) || 15000,
+      maxBodyLength: 6 * 1024 * 1024,
     }
   );
 

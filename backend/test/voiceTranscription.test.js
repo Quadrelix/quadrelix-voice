@@ -41,6 +41,7 @@ test("voice route and mobile agree on allowed speech independently of verificati
       });
       const callsBefore = transcribe.mock.callCount();
       const req = {
+        shop: { shop_id: "test_shop" }, // what shopGate attaches before this handler runs
         file: { path: "synthetic-audio.m4a" },
         query: {},
         header: (name) => name === "X-Shop-Code" ? "TEST01" : undefined,

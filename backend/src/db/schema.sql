@@ -56,3 +56,12 @@ ON CONFLICT (shop_id) DO NOTHING;
 
 -- gen_random_uuid() ships with PostgreSQL 13+ (pgcrypto is built in).
 -- If the Neon project is older, run: CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- Sale completion state. finalized_at is set exactly once, in the same database
+-- transaction that deducts stock, and freezes the bill. delivery_status is the
+-- message state, kept apart from the sale: none | simulated | sent | failed.
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS finalized_at TIMESTAMPTZ;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS delivery_status TEXT NOT NULL DEFAULT 'none';
+UPDATE transactions SET finalized_at = created_at
+ WHERE finalized_at IS NULL AND bill_image_path IS NOT NULL;
+UPDATE transactions SET delivery_status = 'sent'
+ WHERE status = 'sent' AND delivery_status = 'none';

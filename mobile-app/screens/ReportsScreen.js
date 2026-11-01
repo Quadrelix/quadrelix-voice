@@ -71,12 +71,17 @@ export default function ReportsScreen() {
         >
           {!!error && <Text style={s.errorText}>{error}</Text>}
 
-          {/* Profit is the headline — it's the number the owner actually wants. */}
+          {/* The headline is a MARGIN over items whose purchase price is known —
+              not net profit (shop expenses are not tracked) and not a guess for
+              items without a cost. The coverage line says how much it covers. */}
           <View style={s.heroCard}>
-            <Text style={s.heroLabel}>Aaj ka profit</Text>
+            <Text style={s.heroLabel}>Aaj ka munafa (margin)</Text>
             <Text style={s.heroValue}>{money(report?.total_profit)}</Text>
             <Text style={s.heroSub}>
-              {money(report?.total_sales)} sale − {money(report?.total_cost)} cost
+              {money(report?.known_cost_sales ?? report?.total_sales)} sale − {money(report?.total_cost)} cost
+              {report?.cost_coverage != null && report.cost_coverage < 1
+                ? ` · ${Math.round(report.cost_coverage * 100)}% sale ka cost pata hai`
+                : ''}
             </Text>
           </View>
 
@@ -103,8 +108,8 @@ export default function ReportsScreen() {
             <View style={s.noteBox}>
               <Ionicons name="information-circle" size={16} color={colors.orange} />
               <Text style={s.noteText}>
-                {report.unknown_cost_items} item{report.unknown_cost_items !== 1 ? 's' : ''} ka purchase
-                price nahi hai — profit unka cost ginke nahi hai. Products me price daalo.
+                {report.unknown_cost_items} item{report.unknown_cost_items !== 1 ? 's' : ''} ({money(report.missing_cost_sales)} ki
+                bikri) ka purchase price nahi hai — munafa me unhe nahi ginta. Products me price daalo.
               </Text>
             </View>
           )}

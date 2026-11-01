@@ -13,7 +13,16 @@ import { getActiveShop } from "./shop";
 // development, change this one line (e.g. "http://192.168.1.5:3000").
 export const BASE_URL = "https://quadrelix-voice-backend.onrender.com";
 
-const api = axios.create({ baseURL: BASE_URL });
+// A default deadline on every call: without one a stalled connection leaves the
+// shopkeeper staring at a spinner forever. Generous on purpose — Render's free
+// tier can need ~a minute to wake after idling (see warmUpServer below).
+const api = axios.create({ baseURL: BASE_URL, timeout: 45000 });
+
+// Fire-and-forget ping at app start so a sleeping Render instance is already
+// awake by the time the first sale is spoken. Never throws, never blocks.
+export function warmUpServer() {
+  axios.get(`${BASE_URL}/health`, { timeout: 70000 }).catch(() => {});
+}
 
 // Every shop-scoped call carries the shop code. The backend resolves it to a
 // shop id; without it a request would land in the wrong shop (or in the
@@ -112,7 +121,7 @@ export async function finalizeBill(transactionId, phone, paymentStatus) {
     phone,
     payment_status: paymentStatus,
   });
-  return res.data; // { transaction, bill_filename, send_result }
+  return res.data; // { transaction, bill_filename, send_result, delivery_status: 'sent'|'simulated'|'failed', send_error? }
 }
 
 // --- Product catalog & daily report -----------------------------------------
@@ -163,7 +172,7 @@ export async function verifyAndTranscribeAudio(fileUri) {
 
   const res = await api.post("/api/verify-and-transcribe", formData, {
     headers: { "Content-Type": "multipart/form-data" },
-    timeout: 20000, // verify (~0.9s) + Sarvam (~1-2s), with slack
+    timeout: 30000, // verify (~0.9s) + Sarvam (~1-2s); the backend's own deadlines are shorter
   });
   return res.data; // { text, allowed, speaker_verified, reason, lock_state }
 }
