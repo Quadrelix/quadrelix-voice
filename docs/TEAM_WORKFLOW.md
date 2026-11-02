@@ -29,14 +29,24 @@ Galat update chala jaye to Owner `eas update:rollback` kar sakta hai.
 
 ## Expo Go se test
 
-1. Phone me Play Store se **Expo Go** install karein (Expo account zaruri nahi).
-2. Laptop par:
+Pehle se chahiye: Node.js (LTS), git, aur phone me **Expo Go**. App **Expo SDK 54**
+par hai. Play Store ka Expo Go "incompatible / SDK 54" bole to https://expo.dev/go
+se SDK 54 wala Expo Go APK download karke install karein.
+
+1. Repo clone karein, phir:
    ```
    cd mobile-app
    npm install
-   npx expo start
+   npx expo start --go
    ```
-3. Phone aur laptop **same Wi-Fi** par hon, Expo Go se QR scan karein.
+   `--go` zaruri hai: `expo-dev-client` installed hai, isliye bina `--go` ke Expo
+   dev-client maangta hai, Expo Go nahi. (Ya `npx expo start` ke baad terminal me `s` dabayein.)
+2. **Koi `.env` nahi chahiye.** App me koi secret nahi hai; backend ka URL
+   public hai. Sarvam/Gemini/DB/Admin keys sirf Render me hain, kisi ko mat bhejein.
+3. Phone aur laptop **same Wi-Fi** par hon. Expo Go kholkar QR scan karein.
+   Na khule to `npx expo start --go --tunnel` try karein, aur Windows Firewall me Node ko allow karein.
+4. Pehli baar app **shop code** maangega. Ye Owner se lein (alag test shop), 6 characters
+   ka code, ek baar daalna hai, phone me save rehta hai.
 4. App Render ke backend (`BASE_URL` in `mobile-app/services/api.js`) se baat karta hai.
    Backend laptop par chalana ho to `BASE_URL` ko laptop ke IP par karein aur
    **push karne se pehle wapas Render ka URL** kar dein.

@@ -26,6 +26,7 @@ import { BASE_URL, verifyAndTranscribeAudio, sendUtterance, finalizeBill, sendBi
 import { colors, shadow, shadowStrong } from '../theme';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import Share from 'react-native-share';
 
 const COUNTDOWN_SEC = 3;
 
@@ -260,11 +261,16 @@ export default function HandsFreeScreen() {
     }
   }
 
-  // Free delivery path: the app itself hands the bill image to the phone's
-  // share sheet, and WhatsApp is one tap away. Costs nothing — no Twilio, no
-  // sandbox, no provider — which makes it the default until paid WhatsApp
-  // Business API is worth it. The shopkeeper picks the customer's chat
-  // themselves, which also sidesteps the opt-in rules entirely.
+  // Free delivery path: the app itself hands the bill image to WhatsApp. Costs
+  // nothing — no Twilio, no sandbox, no provider — which makes it the default
+  // until paid WhatsApp Business API is worth it.
+  //
+  // First choice: open the CUSTOMER's chat directly (the number the shopkeeper
+  // just dictated) with the bill image attached, so nobody has to search for the
+  // customer in WhatsApp. The shopkeeper only taps Send, and it goes out from
+  // their own WhatsApp number. If that is not possible (no WhatsApp, number not
+  // usable, intent refused) we fall back to the plain share sheet, where the
+  // shopkeeper picks the chat themselves.
   async function shareBill() {
     if (!billUrl) return;
     setSharing(true);
@@ -273,6 +279,9 @@ export default function HandsFreeScreen() {
       const dest = `${FileSystem.cacheDirectory}${fileName}`;
       const download = await FileSystem.downloadAsync(billUrl, dest);
       if (download.status !== 200) throw new Error('Bill image download nahi hui');
+
+      if (await shareToCustomerChat(download.uri, detectedPhone ?? phoneRef.current)) return;
+
       await Sharing.shareAsync(download.uri, {
         mimeType: 'image/png',
         dialogTitle: 'Bill bhejein — WhatsApp chat chunein',
@@ -282,6 +291,35 @@ export default function HandsFreeScreen() {
     } finally {
       setSharing(false);
     }
+  }
+
+  // Try to open WhatsApp (or WhatsApp Business) straight on this customer's
+  // chat with the bill attached. Returns true if it was opened, false to let the
+  // caller fall back to the generic share sheet. Never throws.
+  async function shareToCustomerChat(fileUri, rawPhone) {
+    const digits = String(rawPhone || '').replace(/\D/g, '');
+    // Indian numbers: 10 digits, or already with 91 / a leading 0.
+    let number = null;
+    if (digits.length === 10) number = `91${digits}`;
+    else if (digits.length === 11 && digits.startsWith('0')) number = `91${digits.slice(1)}`;
+    else if (digits.length === 12 && digits.startsWith('91')) number = digits;
+    if (!number) return false;
+
+    for (const social of [Share.Social.WHATSAPP, Share.Social.WHATSAPPBUSINESS]) {
+      try {
+        await Share.shareSingle({
+          social,
+          whatsAppNumber: number,
+          url: fileUri,
+          type: 'image/png',
+          failOnCancel: false,
+        });
+        return true;
+      } catch {
+        // that WhatsApp variant is not installed or refused — try the next one
+      }
+    }
+    return false;
   }
 
   // Retry just the send for a bill that already exists. /api/send-bill picks up
