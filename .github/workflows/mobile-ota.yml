@@ -1,0 +1,59 @@
+name: mobile-ota
+
+# Publishes the app's JS/UI to phones over the air (EAS Update), so testers do
+# not reinstall the APK for every change.
+#
+# - push to voice-lock-integration touching mobile-app/  -> `preview` channel
+# - manual run (Actions tab -> mobile-ota -> Run workflow) -> any channel
+#
+# Needs one repo secret: EXPO_TOKEN (expo.dev -> Account -> Access tokens).
+#
+# OTA only carries JavaScript and assets. A new native package, a new Android
+# permission or a package-name change needs a new APK, and mobile-app's
+# runtimeVersion (app.json -> expo.android.runtimeVersion AND
+# android/app/src/main/res/values/strings.xml) must be bumped together with it,
+# so old APKs never receive JS that expects native code they do not have.
+
+on:
+  push:
+    branches: [voice-lock-integration]
+    paths:
+      - "mobile-app/**"
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "EAS channel to publish to"
+        required: true
+        default: preview
+        type: choice
+        options:
+          - preview
+          - production
+
+concurrency:
+  group: mobile-ota-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile-app/package-lock.json
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - run: npm ci
+      - name: Publish update
+        env:
+          CHANNEL: ${{ github.event.inputs.channel || 'preview' }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message || 'manual run' }}
+        run: eas update --channel "$CHANNEL" --platform android --message "$COMMIT_MESSAGE" --non-interactive
