@@ -51,7 +51,9 @@ logger = logging.getLogger(__name__)
 # Store location
 # ---------------------------------------------------------------------------
 
-STORE_PATH = Path(__file__).parent / "embeddings.json"
+# VOICE_DATA_DIR points at a persistent volume when hosted; unset = next to the code.
+DATA_DIR = Path(os.getenv("VOICE_DATA_DIR") or Path(__file__).parent)
+STORE_PATH = DATA_DIR / "embeddings.json"
 
 _lock = threading.Lock()
 

@@ -1,6 +1,6 @@
 # Team workflow — kaise change karein, test karein, aur phones tak pahunchayein
 
-Ye doc teammates ke liye hai. Pilot me 5-6+ log APK use kar rahe hain, isliye
+Abhi kya chal raha hai: `docs/PILOT_STATUS.md`. Ye doc teammates ke liye hai. Pilot me 5-6+ log APK use kar rahe hain, isliye
 har change ke baad reinstall nahi hota — neeche ka flow follow karein.
 
 ## Kaun si cheez kaise deploy hoti hai
