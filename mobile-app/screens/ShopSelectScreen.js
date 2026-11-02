@@ -44,7 +44,9 @@ export default function ShopSelectScreen({ onDone }) {
         shop_name: shop.shop_name,
         shop_id: shop.shop_id,
       });
-      onDone?.(shop);
+      // Hand over the stored shape (with shop_code); chooseShop persists it
+      // again, and the server's reply alone has no code to send with requests.
+      onDone?.({ shop_code: clean, shop_name: shop.shop_name, shop_id: shop.shop_id });
     } catch (e) {
       const status = e?.response?.status;
       if (status === 404) {
