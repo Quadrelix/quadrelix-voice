@@ -2,6 +2,7 @@
   "expo": {
     "name": "BizMate AI",
     "slug": "ai-business-assistant-mobile",
+    "owner": "nirmal220s-team",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
