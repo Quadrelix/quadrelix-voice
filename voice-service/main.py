@@ -72,7 +72,7 @@ DEFAULT_SPEAKER = "shop_1_owner"
 SERVICE_TOKEN = os.getenv("VOICE_SERVICE_TOKEN", "")  # empty = token check off (dev)
 
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024   # a 30 s m4a is ~500 KB; 5 MB is generous
-VERIFY_LOG = Path(__file__).parent / "verify_log.jsonl"
+VERIFY_LOG = Path(os.getenv("VOICE_DATA_DIR") or Path(__file__).parent) / "verify_log.jsonl"
 ENROLL_OUTLIER_SCORE = 0.15          # below this vs the other clips = wrong voice/noise
 
 # ---------------------------------------------------------------------------

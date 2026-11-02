@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+.pytest_cache/
+tests/
+clips/
+pretrained_models/
+embeddings.json
+verify_log.jsonl
+eval_scores.csv
+*.wav
+*.m4a
+*.md
+smoke_test.py
+evaluate.py

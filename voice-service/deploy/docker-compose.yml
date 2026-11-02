@@ -1,0 +1,40 @@
+# Voice Lock service + HTTPS in front of it, for a single small VM.
+#   cd voice-service/deploy
+#   cp .env.example .env     # fill DOMAIN and VOICE_SERVICE_TOKEN
+#   docker compose up -d --build
+#
+# Only Caddy publishes ports (80/443). The service itself is reachable only
+# inside the compose network, and every endpoint except /health still needs the
+# X-Voice-Token header.
+services:
+  voice:
+    build: ..
+    restart: unless-stopped
+    environment:
+      VOICE_SERVICE_TOKEN: ${VOICE_SERVICE_TOKEN:?set VOICE_SERVICE_TOKEN in .env}
+      VOICE_THRESHOLD: ${VOICE_THRESHOLD:-0.30}
+      VOICE_MIN_SECONDS: ${VOICE_MIN_SECONDS:-1.5}
+    volumes:
+      - voice-data:/data      # embeddings.json + verify_log.jsonl survive redeploys
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - voice
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data      # Let's Encrypt certificates
+      - caddy-config:/config
+
+volumes:
+  voice-data:
+  caddy-data:
+  caddy-config:
