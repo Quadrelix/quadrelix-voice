@@ -111,6 +111,13 @@ test("a down voice service is a 502, and no temp upload is left behind", async (
   stubReplies = [{ status: 500, json: { detail: "boom" } }];
   const r = await post({ label: "owner" });
   assert.equal(r.status, 502);
-  const left = fs.existsSync(process.env.UPLOAD_DIR) ? fs.readdirSync(process.env.UPLOAD_DIR) : [];
+  // The temp file is removed asynchronously right after the response is sent, so give it
+  // a moment instead of checking in the same instant (that raced on Linux CI).
+  let left = [];
+  for (let i = 0; i < 40; i++) {
+    left = fs.existsSync(process.env.UPLOAD_DIR) ? fs.readdirSync(process.env.UPLOAD_DIR) : [];
+    if (left.length === 0) break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
   assert.deepEqual(left, []);
 });

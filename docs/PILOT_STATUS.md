@@ -27,12 +27,13 @@ Postgres CI. Detail: `docs/LAUNCH_REVIEW_2026-11-01.md`.
 - **Calibration mode (naya):** app ka chhupa "आवाज़ टेस्ट" screen (Home ka logo 5 baar tap) + `/api/calibrate-voice` + `voice-service/analyze_log.py`.
   Label ke saath score jama hota hai (audio nahi), aur script threshold table banati hai. Poora tareeka: `docs/VOICE_CALIBRATION.md`.
   Isse M2 ke `clips/` folders wala tareeka ab zaroori nahi.
-- **Owner khud apni payment details bharta hai (naya):** founder sirf shop ka naam aur code banata hai
-  (`backend/scripts/create-shops.ps1`, sirf ADMIN_TOKEN maangti hai). Owner code se login karke Home -> shop ke naam par tap ->
-  "दुकान की जानकारी" me apni UPI id aur phone daalta hai (`PATCH /api/shop`). UPI na ho to bill par QR nahi chhapta,
-  aur Home par yaad dilane wala card aata hai. UPI badalne par confirm poochha jaata hai; shop code abhi bhi akela password hai,
-  isliye usse password ki tarah rakhein.
-- **Bill footer (naya):** har shop ka apna thank-you text bill ke neeche (`shops.bill_footer`, `backend/scripts/create-shops.ps1`).
+- **Owner khud apni dukaan set karta hai (naya):** founder sirf shop ka code banata hai (`backend/scripts/create-shops.ps1`,
+  sirf ADMIN_TOKEN maangti hai). Pehle screen par owner **code + dukaan ka naam + mobile number** daalta hai (ye bill ke upar chhapta hai).
+  Andar: Home -> shop ke naam par tap -> "दुकान की जानकारी" me naam/mobile badal sakta hai, **bill ke neeche ka 1-2 line ka message**
+  likh sakta hai (live preview ke saath), aur apni UPI id daalta hai (`PATCH /api/shop`). UPI na ho to bill par QR nahi chhapta
+  aur Home par yaad dilane wala card aata hai. UPI badalne par confirm poochha jaata hai. Shop code abhi akela password hai,
+  isliye usse password ki tarah rakhein (phone OTP login baad me).
+- **Bill footer:** `shops.bill_footer` bill ke neeche chhapta hai (owner 2 line tak, admin PATCH se lambi text bhi).
 - ~~**M2 baaki:**~~ (calibration mode se kiya jaayega) `voice-service/clips/` ke folders khaali hain. Asli recordings (owner 5 enroll + 15 test, dusre 10+, TV 5, overlap 5)
   karke `python evaluate.py` chalana hai aur table README me likhna hai. Ye go/no-go gate hai.
 - **Hosting baaki:** Oracle Always Free VM (`voice-service/deploy/`, card chahiye). Hugging Face Docker Spaces ab paid hain,

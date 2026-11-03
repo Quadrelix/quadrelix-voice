@@ -8,11 +8,13 @@ from Neon (columns ts, speaker_id, score, threshold, duration_s, decision, label
     python analyze_log.py verify_log.jsonl
     python analyze_log.py export.csv --min 0.20 --max 0.60 --step 0.02
     python analyze_log.py verify_log.jsonl --speaker shop_abc123_owner
+    python analyze_log.py verify_log.jsonl --assume-owner   # count normal billing rows as the owner
 
 Labels are grouped as:
   allowed (should be accepted):  owner, owner_noisy, owner_far, staff...  (starts with "owner" or "staff")
   blocked (must be rejected):    other, tv, family, customer...           (anything else that is labelled)
-Rows without a label (normal shop traffic) are ignored. Rows the service refused as
+Rows without a label (normal shop traffic) are ignored, unless --assume-owner is given: use it
+when only the owner spoke to the app during the pilot, and those rows count as owner clips. Rows the service refused as
 too_short have no usable score and are counted separately.
 
 Rule used to pick the threshold (same as the roadmap): ZERO false accepts on the
@@ -51,8 +53,11 @@ def load_rows(path: str):
     return rows
 
 
-def prepare(rows, speaker=None):
-    """-> (scores_by_label, too_short_by_label, ignored_unlabelled)"""
+def prepare(rows, speaker=None, assume_owner=False):
+    """-> (scores_by_label, too_short_by_label, ignored_unlabelled)
+
+    assume_owner: rows with no label are normal billing; count them as label "owner_billing".
+    """
     scores = defaultdict(list)
     short = defaultdict(int)
     unlabelled = 0
@@ -61,8 +66,10 @@ def prepare(rows, speaker=None):
             continue
         label = str(r.get("label") or "").strip().lower()
         if label in ("", "none", "null"):
-            unlabelled += 1
-            continue
+            if not assume_owner:
+                unlabelled += 1
+                continue
+            label = "owner_billing"
         if str(r.get("decision")) == "too_short":
             short[label] += 1
             continue
@@ -122,9 +129,11 @@ def main(argv=None):
     ap.add_argument("--max", dest="hi", type=float, default=0.60)
     ap.add_argument("--step", type=float, default=0.02)
     ap.add_argument("--speaker", help="only rows for this speaker_id (e.g. shop_abc123_owner)")
+    ap.add_argument("--assume-owner", action="store_true",
+                    help="count rows without a label (normal billing) as the owner's own clips")
     args = ap.parse_args(argv)
 
-    scores, short, unlabelled = prepare(load_rows(args.path), args.speaker)
+    scores, short, unlabelled = prepare(load_rows(args.path), args.speaker, args.assume_owner)
 
     print("\nScores by label")
     for lab in sorted(scores, key=lambda l: (not is_allowed(l), l)):

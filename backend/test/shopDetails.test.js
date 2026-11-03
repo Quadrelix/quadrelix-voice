@@ -98,17 +98,58 @@ test("no shop code is refused", async () => {
   assert.equal(r.status, 401);
 });
 
-test("the shop name and bill footer cannot be changed through this route", async () => {
+test("only the owner-editable fields change: name, phone, UPI id and the bill note", async () => {
   const r = await call("PATCH", "/api/shop", {
     code: b.shop_code,
-    body: { upi_id: "b2@okaxis", shop_name: "Hacked", bill_footer: "pay me instead", active: false },
+    body: {
+      shop_name: "  Manish   Kirana  Store ",
+      upi_id: "b2@okaxis",
+      bill_footer: "Thanks for shopping.\n\n  Please visit again  ",
+      // none of these are owner-editable
+      active: false, shop_code: "HACKED", shop_type: "other", shop_id: "shop_hacked",
+    },
   });
   assert.equal(r.status, 200);
+  assert.equal(r.body.shop.shop_name, "Manish Kirana Store", "spaces collapsed");
+  assert.equal(r.body.shop.bill_footer, "Thanks for shopping.\nPlease visit again", "blank line dropped, trimmed");
+
   const stored = await db.getShop(b.shop_id);
-  assert.equal(stored.shop_name, "Fresh Shop B");
-  assert.ok(!stored.bill_footer, "footer untouched");
-  assert.notEqual(stored.active, false);
+  assert.equal(stored.shop_name, "Manish Kirana Store");
   assert.equal(stored.upi_id, "b2@okaxis");
+  assert.notEqual(stored.active, false);
+  assert.equal(stored.shop_code, b.shop_code, "the code is not changeable here");
+  assert.notEqual(stored.shop_type, "other");
+});
+
+test("the shop name must be 2 to 60 characters", async () => {
+  const c = await db.createShop({ shop_name: "Name Shop" });
+  for (const name of ["", " ", "a", "x".repeat(61)]) {
+    const r = await call("PATCH", "/api/shop", { code: c.shop_code, body: { shop_name: name } });
+    assert.equal(r.status, 400, `rejects ${JSON.stringify(name.slice(0, 5))}`);
+    assert.equal(r.body.code, "bad_name");
+  }
+  const ok = await call("PATCH", "/api/shop", { code: c.shop_code, body: { shop_name: "दुकान 1" } });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.shop.shop_name, "दुकान 1");
+});
+
+test("the bill note is at most 2 lines of 80 characters, and can be cleared", async () => {
+  const c = await db.createShop({ shop_name: "Note Shop" });
+  const tooManyLines = await call("PATCH", "/api/shop", { code: c.shop_code, body: { bill_footer: "one\ntwo\nthree" } });
+  assert.equal(tooManyLines.status, 400);
+  assert.equal(tooManyLines.body.code, "bad_footer");
+
+  const tooLong = await call("PATCH", "/api/shop", { code: c.shop_code, body: { bill_footer: "x".repeat(81) } });
+  assert.equal(tooLong.status, 400);
+  assert.equal(tooLong.body.code, "bad_footer");
+
+  const hindi = await call("PATCH", "/api/shop", { code: c.shop_code, body: { bill_footer: "धन्यवाद! फिर पधारिए" } });
+  assert.equal(hindi.status, 200);
+  assert.equal(hindi.body.shop.bill_footer, "धन्यवाद! फिर पधारिए");
+
+  const cleared = await call("PATCH", "/api/shop", { code: c.shop_code, body: { bill_footer: "  " } });
+  assert.equal(cleared.status, 200);
+  assert.equal(cleared.body.shop.bill_footer ?? null, null);
 });
 
 test("edits are rate-limited per shop", async () => {
@@ -139,4 +180,18 @@ test("a bill still renders with neither UPI id nor phone", async () => {
   assert.ok(fs.statSync(file).size > 3000);
   const empty = await generateBillImage(bill({ upi_id: "  ", owner_phone: "" }));
   assert.equal(pngHeight(empty), pngHeight(file), "blank strings behave like null");
+});
+
+test("a short owner note is printed as plain text, and a long shop name still fits the bill", async () => {
+  const plain = pngHeight(await generateBillImage(bill({ upi_id: "p@okaxis", owner_phone: "9876543210" })));
+  const note = pngHeight(await generateBillImage(bill({
+    upi_id: "p@okaxis", owner_phone: "9876543210", bill_footer: "Thanks for shopping.\nPlease visit again",
+  })));
+  assert.ok(note > plain + 40 && note < plain + 140, `a 2-line note adds a modest strip (${plain} -> ${note})`);
+
+  const longName = await generateBillImage(bill({
+    shop_name: "Shri Ram Lal Gupta Aur Bete General Merchants & Kirana Store Sadar Bazaar",
+    upi_id: "p@okaxis", owner_phone: "9876543210",
+  }));
+  assert.equal(pngHeight(longName), plain, "a long name does not change the layout");
 });
