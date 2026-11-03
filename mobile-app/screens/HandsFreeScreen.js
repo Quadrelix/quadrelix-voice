@@ -24,6 +24,8 @@ import { errorMessage } from '../services/errorMessage';
 import { isVoiceAllowed } from '../services/voiceResponse';
 import { BASE_URL, verifyAndTranscribeAudio, sendUtterance, finalizeBill, sendBill, getTransaction, getVoiceStatus } from '../services/api';
 import { colors, shadow, shadowStrong } from '../theme';
+import { Ionicons } from '@expo/vector-icons';
+import { useI18n } from '../services/i18n';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import Share from 'react-native-share';
@@ -40,6 +42,7 @@ const S = {
 };
 
 export default function HandsFreeScreen() {
+  const { t } = useI18n();
   const [appState, setAppState] = useState(S.LISTENING);
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -75,10 +78,10 @@ export default function HandsFreeScreen() {
   function showVoiceHint(reason) {
     const text =
       reason === 'too_short'
-        ? 'Thoda lamba bolein — awaaz bahut chhoti thi'
+        ? t('handsfree.hintTooShort')
         : reason === 'service_down'
-          ? 'Voice Lock off hai'
-          : 'Awaaz pehchani nahi gayi';
+          ? t('handsfree.hintLockOff')
+          : t('handsfree.hintNotRecognized');
     setVoiceHint(text);
     if (voiceHintTimer.current) clearTimeout(voiceHintTimer.current);
     voiceHintTimer.current = setTimeout(() => setVoiceHint(null), 2200);
@@ -111,7 +114,7 @@ export default function HandsFreeScreen() {
     } catch (e) {
       // Only the backend knows whether verification failures may fail open.
       // A timeout must not bypass an enforced lock via /transcribe.
-      setParseError(errorMessage(e, 'Awaaz process nahi hui. Dobara boliye.'));
+      setParseError(errorMessage(e, t('handsfree.errProcess')));
       return;
     }
 
@@ -129,10 +132,7 @@ export default function HandsFreeScreen() {
       // through) — say so, otherwise the shopkeeper has no idea why nothing
       // happened after they clearly spoke a number.
       if (!data.detected_phone && data.partial_number) {
-        setPhoneHint(
-          `Number adhura suna (${data.partial_number.length} digits) — dobara boliye, ` +
-          `ek-ek digit alag-alag: "9 8 7 6 5 4 3 2 1 0"`
-        );
+        setPhoneHint(t('handsfree.phonePartial', { n: data.partial_number.length }));
       } else {
         setPhoneHint(null);
       }
@@ -209,14 +209,14 @@ export default function HandsFreeScreen() {
 
   async function autoSend(phone, txnId) {
     if (!phone || !txnId) {
-      setErrorMsg('Phone ya transaction ID nahi mila');
+      setErrorMsg(t('handsfree.errNoPhone'));
       setStateSafe(S.ERROR);
       return;
     }
     // Strip country code (91/+91) if present, keep last 10 digits
     const cleanPhone = phone.replace(/\D/g, '').replace(/^91(\d{10})$/, '$1');
     if (cleanPhone.length !== 10) {
-      setErrorMsg(`Number sahi nahi hai: ${phone} (${cleanPhone.length} digits mila)`);
+      setErrorMsg(t('handsfree.errBadNumber', { phone, n: cleanPhone.length }));
       setStateSafe(S.ERROR);
       return;
     }
@@ -238,7 +238,7 @@ export default function HandsFreeScreen() {
       if (result.send_error) setErrorMsg(errorMessage(result.send_error));
       setStateSafe(delivery === 'sent' ? S.DONE : S.FAILED);
     } catch (err) {
-      const msg = errorMessage(err, 'Server se connect nahi hua');
+      const msg = errorMessage(err, t('common.serverError'));
       console.error('autoSend error:', msg, err);
       setErrorMsg(msg);
       // A failed send is not a failed sale: /finalize saves the phone and renders
@@ -278,16 +278,16 @@ export default function HandsFreeScreen() {
       const fileName = billUrl.split('/').pop();
       const dest = `${FileSystem.cacheDirectory}${fileName}`;
       const download = await FileSystem.downloadAsync(billUrl, dest);
-      if (download.status !== 200) throw new Error('Bill image download nahi hui');
+      if (download.status !== 200) throw new Error(t('handsfree.errDownload'));
 
       if (await shareToCustomerChat(download.uri, detectedPhone ?? phoneRef.current)) return;
 
       await Sharing.shareAsync(download.uri, {
         mimeType: 'image/png',
-        dialogTitle: 'Bill bhejein — WhatsApp chat chunein',
+        dialogTitle: t('handsfree.shareDialog'),
       });
     } catch (e) {
-      setErrorMsg(errorMessage(e, 'Share nahi khula'));
+      setErrorMsg(errorMessage(e, t('handsfree.errShare')));
     } finally {
       setSharing(false);
     }
@@ -337,7 +337,7 @@ export default function HandsFreeScreen() {
       setErrorMsg(null);
       setStateSafe(delivery === 'sent' ? S.DONE : S.FAILED);
     } catch (err) {
-      setErrorMsg(errorMessage(err, 'Server se connect nahi hua'));
+      setErrorMsg(errorMessage(err, t('common.serverError')));
       setStateSafe(S.FAILED);
     }
   }
@@ -360,7 +360,7 @@ export default function HandsFreeScreen() {
 
   // ── UI helpers ───────────────────────────────────────────────────────────
   const dotColor = voiceActive ? '#e74c3c' : isListening ? '#27ae60' : '#555';
-  const dotLabel = voiceActive ? 'Awaaz aa rahi hai...' : isListening ? 'Sun raha hoon...' : 'Mic band hai';
+  const dotLabel = voiceActive ? t('handsfree.dotHearing') : isListening ? t('handsfree.dotListening') : t('handsfree.dotOff');
   const ringSize = countdownAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
 
   // ── Done ─────────────────────────────────────────────────────────────────
@@ -368,10 +368,10 @@ export default function HandsFreeScreen() {
     return (
       <View style={st.centeredScreen}>
         <Text style={st.doneEmoji}>✅</Text>
-        <Text style={st.doneTitle}>Bill Bhej Diya!</Text>
+        <Text style={st.doneTitle}>{t('handsfree.doneTitle')}</Text>
         <Text style={st.donePhone}>{detectedPhone}</Text>
         <TouchableOpacity style={st.newSaleBtn} onPress={handleNewSale}>
-          <Text style={st.newSaleBtnText}>Agla Customer →</Text>
+          <Text style={st.newSaleBtnText}>{t('handsfree.next')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -386,29 +386,28 @@ export default function HandsFreeScreen() {
       <View style={st.centeredScreen}>
         <Text style={st.errorEmoji}>{shareOnly ? '✅' : '🚕'}</Text>
         <Text style={shareOnly ? st.readyTitle : st.failedTitle}>
-          {shareOnly ? 'Bill ban gayi — WhatsApp pe bhejein' : 'Bill ban gayi — bhej nahi paye'}
+          {shareOnly ? t('handsfree.readyShare') : t('handsfree.readyFailed')}
         </Text>
         {!shareOnly && !!errorMsg && <Text style={st.errorDetail}>{errorMsg}</Text>}
         {!!billUrl && <Image source={{ uri: billUrl }} style={st.billThumb} resizeMode="contain" />}
-        {!!detectedPhone && <Text style={st.failedPhone}>{detectedPhone} pe bhejni hai</Text>}
-        {shareOnly && <Text style={st.simNote}>Bill save ho gayi. Neeche button se customer ko bhejein.</Text>}
+        {!!detectedPhone && <Text style={st.failedPhone}>{t('handsfree.sendTo', { phone: detectedPhone })}</Text>}
         <TouchableOpacity
           style={[st.shareBtn, sharing && { opacity: 0.6 }]}
           onPress={shareBill}
           disabled={sharing}
         >
           <Text style={st.shareBtnText}>
-            {sharing ? 'Khol raha hoon...' : 'WhatsApp se bhejein (free)'}
+            {sharing ? t('handsfree.opening') : t('handsfree.shareBtn')}
           </Text>
         </TouchableOpacity>
         {!shareOnly && (
           <TouchableOpacity style={st.newSaleBtn} onPress={retrySend}>
-            <Text style={st.newSaleBtnText}>Server se bhejein</Text>
+            <Text style={st.newSaleBtnText}>{t('handsfree.sendServer')}</Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity style={shareOnly ? st.newSaleBtn : st.skipBtn} onPress={handleNewSale}>
           <Text style={shareOnly ? st.newSaleBtnText : st.skipBtnText}>
-            {shareOnly ? 'Agla Customer →' : 'Chhod do — Agla Customer →'}
+            {shareOnly ? t('handsfree.next') : t('handsfree.skipNext')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -420,12 +419,12 @@ export default function HandsFreeScreen() {
     return (
       <View style={st.centeredScreen}>
         <Text style={st.errorEmoji}>⚠️</Text>
-        <Text style={st.errorTitle}>Kuch galat hua</Text>
+        <Text style={st.errorTitle}>{t('common.somethingWrong')}</Text>
         {!!errorMsg && (
           <Text style={st.errorDetail}>{errorMsg}</Text>
         )}
         <TouchableOpacity style={st.newSaleBtn} onPress={handleNewSale}>
-          <Text style={st.newSaleBtnText}>Dobara Try Karein</Text>
+          <Text style={st.newSaleBtnText}>{t('common.retry')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -435,20 +434,18 @@ export default function HandsFreeScreen() {
   return (
     <View style={st.container}>
       <View style={st.topRow}>
-        <TouchableOpacity style={st.backBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={st.backBtn} onPress={() => navigation.goBack()} accessibilityLabel={t('common.back')}>
           <Text style={st.backBtnText}>←</Text>
         </TouchableOpacity>
-        <Text style={st.title}>New Sale</Text>
+        <Text style={st.title}>{t('handsfree.title')}</Text>
         <TouchableOpacity style={st.modeBtn} onPress={toggleMode}>
           <Text style={st.modeBtnText}>
-            {mode === 'tap' ? '🛡 Shor-safe' : '🎧 Auto'}
+            {mode === 'tap' ? t('handsfree.modeTap') : t('handsfree.modeAuto')}
           </Text>
         </TouchableOpacity>
       </View>
       <Text style={st.subtitle}>
-        {mode === 'tap'
-          ? 'Bolo — items apne aap jud jayenge. Number bolo to bill bhej dega.'
-          : 'Auto mode — mic hamesha sun raha hai (shaant dukaan ke liye).'}
+        {mode === 'tap' ? t('handsfree.subTap') : t('handsfree.subAuto')}
       </Text>
 
       {/* Voice Lock state: a badge when the lock is on but the service is
@@ -456,13 +453,13 @@ export default function HandsFreeScreen() {
           never enrolled. Neither blocks anything. */}
       {!!voiceStatus && voiceStatus.mode !== 'off' && !voiceStatus.service_up && (
         <TouchableOpacity style={st.lockOffBadge} onPress={() => navigation.navigate('VoiceEnroll')}>
-          <Text style={st.lockOffText}>⚠️ Voice Lock off — billing chalu hai</Text>
+          <Text style={st.lockOffText}>{t('handsfree.lockOffBadge')}</Text>
         </TouchableOpacity>
       )}
       {!!voiceStatus && !voiceStatus.enrolled && voiceStatus.mode !== 'off' && (
         <TouchableOpacity style={st.enrollBanner} onPress={() => navigation.navigate('VoiceEnroll')}>
           <Text style={st.enrollBannerText}>
-            Apni awaaz register karein — 5 chhote clips
+            {t('handsfree.enrollBanner')}
           </Text>
           <Text style={st.enrollBannerArrow}>→</Text>
         </TouchableOpacity>
@@ -474,10 +471,10 @@ export default function HandsFreeScreen() {
             style={[st.micBtn, tap.recording && st.micBtnRec]}
             onPress={() => (tap.recording ? tap.stop() : tap.start())}
           >
-            <Text style={st.micBtnIcon}>{tap.recording ? '⏹' : '🎙'}</Text>
+            <Ionicons name={tap.recording ? 'stop' : 'mic'} size={48} color="#fff" />
           </TouchableOpacity>
           <Text style={st.tapHint}>
-            {tap.recording ? 'Sun raha hoon — bolna khatam ho to dabao' : 'Bolne ke liye mic dabao'}
+            {tap.recording ? t('handsfree.tapRecording') : t('handsfree.tapIdle')}
           </Text>
           {tap.busy && <ActivityIndicator size="small" color="#2980b9" />}
           {tap.error && <Text style={st.errorText}>{tap.error}</Text>}
@@ -486,7 +483,6 @@ export default function HandsFreeScreen() {
         <View style={st.statusRow}>
           <View style={[st.dot, { backgroundColor: dotColor }]} />
           <Text style={st.statusText}>{dotLabel}</Text>
-          {!meteringAvailable && <Text style={st.badge}> (Fixed chunks)</Text>}
           {busy && <ActivityIndicator size="small" color="#2980b9" style={{ marginLeft: 8 }} />}
           {queueDepth > 0 && <Text style={st.badge}> +{queueDepth}</Text>}
         </View>
@@ -496,15 +492,15 @@ export default function HandsFreeScreen() {
 
       {!!lastHeard && (
         <Text style={st.lastHeard} numberOfLines={2}>
-          {'\uD83C\uDF99'} "{lastHeard}"
+          "{lastHeard}"
         </Text>
       )}
       {!!parseError && (
-        <Text style={st.parseError} numberOfLines={1}>(Samjha nahi: {parseError})</Text>
+        <Text style={st.parseError} numberOfLines={2}>{t('handsfree.parseError', { err: parseError })}</Text>
       )}
       {!!phoneHint && (
         <Text style={st.phoneHint} numberOfLines={2}>
-          {'⚠️'} {phoneHint}
+          {phoneHint}
         </Text>
       )}
       {!!voiceHint && (
@@ -518,7 +514,7 @@ export default function HandsFreeScreen() {
         style={st.list}
         ListEmptyComponent={
           <Text style={st.emptyText}>
-            Abhi tak koi item nahi{'\n'}bolo jaise "2 Dettol sabun 10 rupay"
+            {t('handsfree.empty')}
           </Text>
         }
         renderItem={({ item }) => (
@@ -531,14 +527,14 @@ export default function HandsFreeScreen() {
             </View>
             {item.price != null
               ? <Text style={st.itemTotal}>{'\u20B9'}{item.line_total}</Text>
-              : <Text style={st.missingPrice}>Price?</Text>}
+              : <Text style={st.missingPrice}>{t('handsfree.noPrice')}</Text>}
           </View>
         )}
       />
 
       {items.length > 0 && (
         <View style={st.totalRow}>
-          <Text style={st.totalLabel}>Total</Text>
+          <Text style={st.totalLabel}>{t('handsfree.total')}</Text>
           <Text style={st.totalAmount}>{'\u20B9'}{total}</Text>
         </View>
       )}
@@ -548,7 +544,7 @@ export default function HandsFreeScreen() {
         <View style={st.overlay}>
           <Text style={st.overlayPhone}>{'\uD83D\uDCF1'} {detectedPhone}</Text>
           <Text style={st.overlayLabel}>
-            {secondsLeft} second{secondsLeft !== 1 ? 's' : ''} mein bhej raha hoon...
+            {t('handsfree.countdown', { n: secondsLeft })}
           </Text>
           <View style={st.ringWrap}>
             <Animated.View style={[st.ring, { width: ringSize, height: ringSize }]} />
@@ -559,11 +555,11 @@ export default function HandsFreeScreen() {
             onPress={() => { setCredit(!credit); creditRef.current = !credit; }}
           >
             <Text style={st.creditBtnText}>
-              {credit ? '\u2713 Udaar (bina paise)' : 'Udaar? (tap karo)'}
+              {credit ? t('handsfree.creditOn') : t('handsfree.creditOff')}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity style={st.cancelBtn} onPress={handleCancel}>
-            <Text style={st.cancelText}>{'\u2715'} Ruko (galat number)</Text>
+            <Text style={st.cancelText}>{t('handsfree.cancelSend')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -572,7 +568,7 @@ export default function HandsFreeScreen() {
       {appState === S.SENDING && (
         <View style={st.overlay}>
           <ActivityIndicator size="large" color="#fff" />
-          <Text style={st.sendingText}>Bill bhej raha hoon...</Text>
+          <Text style={st.sendingText}>{t('handsfree.sending')}</Text>
         </View>
       )}
     </View>
@@ -582,7 +578,7 @@ export default function HandsFreeScreen() {
 const st = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg, padding: 20, paddingTop: 54 },
   title: { fontSize: 24, fontWeight: '800', color: colors.text, letterSpacing: -0.3, flex: 1, textAlign: 'left', marginLeft: 10 },
-  subtitle: { fontSize: 12.5, color: colors.sub, marginTop: 4, marginBottom: 14, lineHeight: 18 },
+  subtitle: { fontSize: 14, color: colors.sub, marginTop: 2, marginBottom: 14, lineHeight: 20 },
 
   statusRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   dot: { width: 12, height: 12, borderRadius: 6, marginRight: 8 },
@@ -590,7 +586,7 @@ const st = StyleSheet.create({
   badge: { color: colors.primary, fontSize: 12 },
   errorText: { color: colors.red, fontSize: 13, marginBottom: 6 },
   topRow: { flexDirection: 'row', alignItems: 'center' },
-  backBtn: { paddingVertical: 4, paddingHorizontal: 4 },
+  backBtn: { minWidth: 44, minHeight: 44, justifyContent: 'center' },
   backBtnText: { color: colors.text, fontSize: 24, fontWeight: '600' },
 
   lastHeard: {
@@ -611,13 +607,13 @@ const st = StyleSheet.create({
     alignSelf: 'flex-start', backgroundColor: colors.orangeSoft, borderRadius: 10,
     paddingVertical: 7, paddingHorizontal: 11, marginBottom: 8,
   },
-  lockOffText: { color: '#92400E', fontSize: 11.5, fontWeight: '700' },
+  lockOffText: { color: '#92400E', fontSize: 13, fontWeight: '700' },
   enrollBanner: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: colors.primarySoft, borderRadius: 12,
     paddingVertical: 10, paddingHorizontal: 13, marginBottom: 8,
   },
-  enrollBannerText: { color: colors.primary, fontSize: 12.5, fontWeight: '700' },
+  enrollBannerText: { color: colors.primary, fontSize: 13.5, fontWeight: '700', flex: 1 },
   enrollBannerArrow: { color: colors.primary, fontSize: 16, fontWeight: '800' },
 
   list: { flex: 1, marginTop: 10 },
@@ -666,21 +662,20 @@ const st = StyleSheet.create({
   doneEmoji: { fontSize: 72, marginBottom: 16 },
   doneTitle: { color: colors.green, fontSize: 30, fontWeight: '800', marginBottom: 8 },
   donePhone: { color: colors.sub, fontSize: 20, letterSpacing: 2, marginBottom: 8 },
-  simNote: { color: colors.faint, fontSize: 12, marginBottom: 24, textAlign: 'center' },
   errorEmoji: { fontSize: 64, marginBottom: 16 },
   errorTitle: { color: colors.red, fontSize: 24, fontWeight: '800', marginBottom: 12 },
   errorDetail: { color: colors.sub, fontSize: 14, textAlign: 'center', marginBottom: 20, paddingHorizontal: 10 },
 
-  modeBtn: { backgroundColor: colors.card, borderRadius: 18, paddingVertical: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.line },
-  modeBtnText: { color: colors.text, fontSize: 11.5, fontWeight: '700' },
+  modeBtn: { backgroundColor: colors.card, borderRadius: 20, minHeight: 40, justifyContent: 'center', paddingHorizontal: 14, borderWidth: 1, borderColor: colors.line },
+  modeBtnText: { color: colors.text, fontSize: 13, fontWeight: '700' },
   tapWrap: { alignItems: 'center', marginBottom: 14 },
   micBtn: {
-    width: 92, height: 92, borderRadius: 46, backgroundColor: colors.primary,
+    width: 112, height: 112, borderRadius: 56, backgroundColor: colors.primary,
     justifyContent: 'center', alignItems: 'center', marginBottom: 10, ...shadowStrong,
   },
   micBtnRec: { backgroundColor: colors.red },
   micBtnIcon: { fontSize: 36 },
-  tapHint: { color: colors.sub, fontSize: 13 },
+  tapHint: { color: colors.sub, fontSize: 14, textAlign: 'center' },
 
   failedTitle: { color: colors.orange, fontSize: 22, fontWeight: '800', marginBottom: 12 },
   readyTitle: { color: colors.green, fontSize: 22, fontWeight: '800', marginBottom: 12, textAlign: 'center' },

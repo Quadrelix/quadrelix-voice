@@ -11,6 +11,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { errorMessage } from '../services/errorMessage';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Modal,
   RefreshControl,
@@ -28,6 +29,7 @@ import {
   updateProduct,
   deleteProduct,
 } from '../services/api';
+import { useI18n } from '../services/i18n';
 import { colors, shadow, money } from '../theme';
 
 const EMPTY_FORM = {
@@ -37,6 +39,7 @@ const EMPTY_FORM = {
 
 export default function ProductsScreen() {
   const navigation = useNavigation();
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
@@ -54,12 +57,12 @@ export default function ProductsScreen() {
       const data = await listProducts();
       setProducts(data.products || []);
     } catch (e) {
-      setError(errorMessage(e, 'Backend se connect nahi hua'));
+      setError(errorMessage(e, t('common.serverError')));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [t]);
 
   useFocusEffect(
     useCallback(() => {
@@ -103,7 +106,7 @@ export default function ProductsScreen() {
 
   async function save() {
     if (!form.name.trim()) {
-      setError('Naam zaroori hai');
+      setError(t('products.nameRequired'));
       return;
     }
     setSaving(true);
@@ -125,10 +128,18 @@ export default function ProductsScreen() {
       setFormOpen(false);
       await reload();
     } catch (e) {
-      setError(errorMessage(e, 'Save nahi hua'));
+      setError(errorMessage(e, t('products.saveFailed')));
     } finally {
       setSaving(false);
     }
+  }
+
+  // Deleting is permanent and the icon sits next to "edit", so ask first.
+  function confirmRemove(product) {
+    Alert.alert(t('products.deleteTitle', { name: product.name }), t('products.deleteBody'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('common.delete'), style: 'destructive', onPress: () => remove(product) },
+    ]);
   }
 
   async function remove(product) {
@@ -136,22 +147,23 @@ export default function ProductsScreen() {
       await deleteProduct(product.product_id);
       await reload();
     } catch (e) {
-      setError(errorMessage(e, 'Delete nahi hua'));
+      setError(errorMessage(e, t('products.deleteFailed')));
     }
   }
 
   return (
     <View style={s.screen}>
       <View style={s.header}>
-        <View>
-          <Text style={s.title}>Products</Text>
+        <View style={{ flex: 1, marginRight: 8 }}>
+          <Text style={s.title}>{t('products.title')}</Text>
           <Text style={s.subtitle}>
-            {products.length} items{lowCount > 0 ? ` · ${lowCount} stock kam` : ''}
+            {t('products.count', { n: products.length })}
+            {lowCount > 0 ? ` · ${t('products.lowCount', { n: lowCount })}` : ''}
           </Text>
         </View>
         <TouchableOpacity style={s.reportBtn} onPress={() => navigation.navigate('Reports')}>
-          <Ionicons name="bar-chart" size={15} color={colors.primary} />
-          <Text style={s.reportBtnText}>Report</Text>
+          <Ionicons name="bar-chart" size={17} color={colors.primary} />
+          <Text style={s.reportBtnText}>{t('products.report')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -162,11 +174,15 @@ export default function ProductsScreen() {
           style={s.searchInput}
           value={query}
           onChangeText={setQuery}
-          placeholder="Naam, brand ya category se dhundo"
+          placeholder={t('products.search')}
           placeholderTextColor={colors.faint}
         />
         {query ? (
-          <TouchableOpacity onPress={() => setQuery('')}>
+          <TouchableOpacity
+            onPress={() => setQuery('')}
+            style={s.clearBtn}
+            accessibilityLabel={t('products.clearSearch')}
+          >
             <Ionicons name="close-circle" size={17} color={colors.faint} />
           </TouchableOpacity>
         ) : null}
@@ -188,9 +204,7 @@ export default function ProductsScreen() {
           }
           ListEmptyComponent={
             <Text style={s.emptyText}>
-              {query
-                ? 'Is naam se koi product nahi mila.'
-                : 'Koi product nahi hai.\n"+ Add" se products daalo — phir\nprice bolna zaroori nahi padega.'}
+              {query ? t('products.emptySearch') : t('products.empty')}
             </Text>
           }
           renderItem={({ item }) => {
@@ -206,25 +220,33 @@ export default function ProductsScreen() {
                     {item.name}
                     {item.brand ? <Text style={s.brand}> · {item.brand}</Text> : null}
                   </Text>
-                  <Text style={s.meta}>
+                  <Text style={s.meta} numberOfLines={2}>
                     {fixed ? (
                       <>
                         {item.purchase_price != null ? `${money(item.purchase_price)} → ` : ''}
                         {money(item.selling_price)}
                       </>
                     ) : (
-                      <Text style={s.noFixed}>Bill pe price batana hoga</Text>
+                      <Text style={s.noFixed}>{t('products.priceAtBill')}</Text>
                     )}
                     {'   '}
                     <Text style={low ? s.lowStock : null}>
-                      stock {item.stock_qty ?? 0}{low ? ' (kam!)' : ''}
+                      {t(low ? 'products.stockLow' : 'products.stock', { n: item.stock_qty ?? 0 })}
                     </Text>
                   </Text>
                 </View>
-                <TouchableOpacity style={s.iconBtn} onPress={() => openForm(item)}>
+                <TouchableOpacity
+                  style={s.iconBtn}
+                  onPress={() => openForm(item)}
+                  accessibilityLabel={t('products.edit')}
+                >
                   <Ionicons name="create-outline" size={18} color={colors.sub} />
                 </TouchableOpacity>
-                <TouchableOpacity style={s.iconBtn} onPress={() => remove(item)}>
+                <TouchableOpacity
+                  style={s.iconBtn}
+                  onPress={() => confirmRemove(item)}
+                  accessibilityLabel={t('common.delete')}
+                >
                   <Ionicons name="trash-outline" size={18} color={colors.red} />
                 </TouchableOpacity>
               </View>
@@ -237,7 +259,7 @@ export default function ProductsScreen() {
 
       <TouchableOpacity style={s.addBtn} onPress={() => openForm(null)} activeOpacity={0.85}>
         <Ionicons name="add" size={20} color="#fff" />
-        <Text style={s.addBtnText}>Add Product</Text>
+        <Text style={s.addBtnText}>{t('products.add')}</Text>
       </TouchableOpacity>
 
       {/* Add/edit modal */}
@@ -245,55 +267,48 @@ export default function ProductsScreen() {
         <View style={s.modalWrap}>
           <View style={s.modalCard}>
             <View style={s.modalHandle} />
-            <Text style={s.modalTitle}>{editingId ? 'Product Edit' : 'Naya Product'}</Text>
+            <Text style={s.modalTitle}>{editingId ? t('products.formEdit') : t('products.formAdd')}</Text>
 
-            <Text style={s.label}>Naam *</Text>
+            <Text style={s.label}>{t('products.name')}</Text>
             <TextInput style={s.input} value={form.name}
-              onChangeText={(v) => setForm({ ...form, name: v })}
-              placeholder="jaise: Dettol Sabun" placeholderTextColor={colors.faint} />
+              onChangeText={(v) => setForm({ ...form, name: v })} />
 
             <View style={s.inputRow}>
               <View style={s.inputHalf}>
-                <Text style={s.label}>Brand</Text>
+                <Text style={s.label}>{t('products.brand')}</Text>
                 <TextInput style={s.input} value={form.brand}
-                  onChangeText={(v) => setForm({ ...form, brand: v })}
-                  placeholder="Dettol" placeholderTextColor={colors.faint} />
+                  onChangeText={(v) => setForm({ ...form, brand: v })} />
               </View>
               <View style={s.inputHalf}>
-                <Text style={s.label}>Category</Text>
+                <Text style={s.label}>{t('products.category')}</Text>
                 <TextInput style={s.input} value={form.category}
-                  onChangeText={(v) => setForm({ ...form, category: v })}
-                  placeholder="Sabun" placeholderTextColor={colors.faint} />
+                  onChangeText={(v) => setForm({ ...form, category: v })} />
               </View>
             </View>
 
             <View style={s.inputRow}>
               <View style={s.inputHalf}>
-                <Text style={s.label}>Purchase ₹</Text>
+                <Text style={s.label}>{t('products.purchase')}</Text>
                 <TextInput style={s.input} value={form.purchase_price} keyboardType="numeric"
-                  onChangeText={(v) => setForm({ ...form, purchase_price: v })}
-                  placeholder="18" placeholderTextColor={colors.faint} />
+                  onChangeText={(v) => setForm({ ...form, purchase_price: v })} />
               </View>
               <View style={s.inputHalf}>
-                <Text style={s.label}>Selling ₹ (optional)</Text>
+                <Text style={s.label}>{t('products.selling')}</Text>
                 <TextInput style={s.input} value={form.selling_price} keyboardType="numeric"
-                  onChangeText={(v) => setForm({ ...form, selling_price: v })}
-                  placeholder="25 ya khaali" placeholderTextColor={colors.faint} />
+                  onChangeText={(v) => setForm({ ...form, selling_price: v })} />
               </View>
             </View>
 
             <View style={s.inputRow}>
               <View style={s.inputHalf}>
-                <Text style={s.label}>Stock</Text>
+                <Text style={s.label}>{t('products.stockQty')}</Text>
                 <TextInput style={s.input} value={form.stock_qty} keyboardType="numeric"
-                  onChangeText={(v) => setForm({ ...form, stock_qty: v })}
-                  placeholder="40" placeholderTextColor={colors.faint} />
+                  onChangeText={(v) => setForm({ ...form, stock_qty: v })} />
               </View>
               <View style={s.inputHalf}>
-                <Text style={s.label}>Min stock alert</Text>
+                <Text style={s.label}>{t('products.minStock')}</Text>
                 <TextInput style={s.input} value={form.min_stock_level} keyboardType="numeric"
-                  onChangeText={(v) => setForm({ ...form, min_stock_level: v })}
-                  placeholder="10" placeholderTextColor={colors.faint} />
+                  onChangeText={(v) => setForm({ ...form, min_stock_level: v })} />
               </View>
             </View>
 
@@ -301,10 +316,10 @@ export default function ProductsScreen() {
 
             <View style={s.modalBtnRow}>
               <TouchableOpacity style={s.modalCancel} onPress={() => setFormOpen(false)}>
-                <Text style={s.modalCancelText}>Cancel</Text>
+                <Text style={s.modalCancelText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[s.modalSave, saving && { opacity: 0.6 }]} onPress={save} disabled={saving}>
-                <Text style={s.modalSaveText}>{saving ? 'Saving...' : 'Save'}</Text>
+                <Text style={s.modalSaveText}>{saving ? t('common.loading') : t('common.save')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -321,44 +336,45 @@ const s = StyleSheet.create({
     paddingHorizontal: 20, paddingTop: 60, paddingBottom: 12,
   },
   title: { fontSize: 26, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
-  subtitle: { fontSize: 12.5, color: colors.sub, marginTop: 3 },
+  subtitle: { fontSize: 14, color: colors.sub, marginTop: 3 },
   reportBtn: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primarySoft,
-    borderRadius: 20, paddingVertical: 8, paddingHorizontal: 13,
+    borderRadius: 22, minHeight: 44, paddingHorizontal: 14,
   },
-  reportBtnText: { color: colors.primary, fontSize: 12.5, fontWeight: '700', marginLeft: 5 },
+  reportBtnText: { color: colors.primary, fontSize: 14, fontWeight: '700', marginLeft: 5 },
 
   searchBox: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card,
     borderRadius: 14, marginHorizontal: 20, paddingHorizontal: 12, height: 44,
     borderWidth: 1, borderColor: colors.line,
   },
-  searchInput: { flex: 1, marginLeft: 8, fontSize: 13.5, color: colors.text },
+  searchInput: { flex: 1, marginLeft: 8, fontSize: 14, color: colors.text },
+  clearBtn: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', marginRight: -12 },
 
   list: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 90 },
   card: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card,
-    borderRadius: 16, padding: 12, marginBottom: 10, ...shadow,
+    borderRadius: 16, padding: 12, marginBottom: 10, minHeight: 64, ...shadow,
   },
   iconBox: {
     width: 42, height: 42, borderRadius: 12, backgroundColor: colors.primarySoft,
     alignItems: 'center', justifyContent: 'center', marginRight: 12,
   },
   iconBoxLow: { backgroundColor: colors.orangeSoft },
-  name: { fontSize: 14.5, fontWeight: '700', color: colors.text },
+  name: { fontSize: 15, fontWeight: '700', color: colors.text },
   brand: { color: colors.sub, fontWeight: '400', fontSize: 13 },
-  meta: { fontSize: 11.5, color: colors.sub, marginTop: 3 },
+  meta: { fontSize: 13, color: colors.sub, marginTop: 3 },
   lowStock: { color: colors.orange, fontWeight: '700' },
   noFixed: { color: colors.faint, fontStyle: 'italic' },
-  iconBtn: { padding: 8, marginLeft: 2 },
+  iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
 
-  errorText: { color: colors.red, fontSize: 12, marginHorizontal: 20, marginBottom: 6 },
-  emptyText: { color: colors.faint, textAlign: 'center', marginTop: 48, fontSize: 13, lineHeight: 22 },
+  errorText: { color: colors.red, fontSize: 13, marginHorizontal: 20, marginBottom: 6 },
+  emptyText: { color: colors.faint, textAlign: 'center', marginTop: 48, fontSize: 14, lineHeight: 22 },
 
   addBtn: {
     position: 'absolute', left: 20, right: 20, bottom: 16,
     flexDirection: 'row', backgroundColor: colors.primary, borderRadius: 16,
-    paddingVertical: 15, alignItems: 'center', justifyContent: 'center', ...shadow,
+    minHeight: 52, alignItems: 'center', justifyContent: 'center', ...shadow,
   },
   addBtnText: { color: '#fff', fontSize: 15.5, fontWeight: '700', marginLeft: 6 },
 
@@ -372,19 +388,19 @@ const s = StyleSheet.create({
     backgroundColor: colors.line, marginBottom: 14,
   },
   modalTitle: { color: colors.text, fontSize: 19, fontWeight: '800', marginBottom: 4 },
-  label: { color: colors.sub, fontSize: 11.5, marginBottom: 5, marginTop: 10, fontWeight: '600' },
+  label: { color: colors.sub, fontSize: 13, marginBottom: 5, marginTop: 10, fontWeight: '600' },
   input: {
     backgroundColor: colors.bg, borderRadius: 12, color: colors.text, fontSize: 15,
-    paddingVertical: 11, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.line,
+    minHeight: 44, paddingVertical: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.line,
   },
   inputRow: { flexDirection: 'row', gap: 12 },
   inputHalf: { flex: 1 },
   modalBtnRow: { flexDirection: 'row', gap: 12, marginTop: 20 },
   modalCancel: {
     flex: 1, borderWidth: 1, borderColor: colors.line, borderRadius: 14,
-    paddingVertical: 14, alignItems: 'center',
+    minHeight: 48, justifyContent: 'center', alignItems: 'center',
   },
   modalCancelText: { color: colors.sub, fontSize: 15, fontWeight: '600' },
-  modalSave: { flex: 1, backgroundColor: colors.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  modalSave: { flex: 1, backgroundColor: colors.primary, borderRadius: 14, minHeight: 48, justifyContent: 'center', alignItems: 'center' },
   modalSaveText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });

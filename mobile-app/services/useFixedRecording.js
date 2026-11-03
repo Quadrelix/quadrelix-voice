@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAudioRecorder, AudioModule, setAudioModeAsync } from 'expo-audio';
 import { RECORDING_OPTIONS } from './recordingOptions';
 import { errorMessage } from './errorMessage';
+import { tNow } from './i18n';
 
 export function useFixedRecording({ seconds = 6 } = {}) {
   const recorder = useAudioRecorder(RECORDING_OPTIONS);
@@ -27,7 +28,7 @@ export function useFixedRecording({ seconds = 6 } = {}) {
       try {
         const status = await AudioModule.requestRecordingPermissionsAsync();
         if (!status.granted) {
-          setError('Mic permission chahiye — Settings mein allow karein');
+          setError(tNow('common.micPermission'));
           return;
         }
         await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });

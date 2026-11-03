@@ -12,6 +12,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage } from "./errorMessage";
+import { tNow } from './i18n';
 import {
   useAudioRecorder,
   AudioModule,
@@ -64,7 +65,7 @@ export function useTapToTalk({ onSegment }) {
       try {
         const status = await AudioModule.requestRecordingPermissionsAsync();
         if (!status.granted) {
-          setError("Mic permission chahiye — Settings mein allow karein");
+          setError(tNow('common.micPermission'));
           return;
         }
         await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });

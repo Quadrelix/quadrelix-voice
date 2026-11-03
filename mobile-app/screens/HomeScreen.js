@@ -1,19 +1,19 @@
-// HomeScreen.js — the shop dashboard ("BizMate AI" home).
+// HomeScreen.js — the shop dashboard.
 //
-// The mockup's idea in one line: the shopkeeper should be able to start a sale
-// with ONE tap and should see how today is going without pressing anything.
-// Everything on this screen is therefore either (a) a shortcut into the voice
-// flow, or (b) a read of /api/report/daily + /api/transactions — real numbers,
-// never placeholder ones.
+// One idea: start a sale with ONE tap (the big mic) and see how today is going
+// without pressing anything. Everything here is either a shortcut into the
+// voice flow or a read of /api/report/daily + /api/transactions — real numbers,
+// never placeholders. Navigation to Products / Customers / Reports lives in the
+// tab bar, so it is not repeated on this screen.
 //
 // It refreshes on focus, so returning from a voice sale updates the summary
 // immediately.
 
 import React, { useCallback, useState } from 'react';
-import { errorMessage } from '../services/errorMessage';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -24,6 +24,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { errorMessage } from '../services/errorMessage';
 import {
   getShop,
   dailyReport,
@@ -31,23 +32,13 @@ import {
   getVoiceStatus,
 } from '../services/api';
 import { useShop } from '../services/ShopContext';
+import { useI18n } from '../services/i18n';
+import LanguageToggle from '../components/LanguageToggle';
 import { colors, shadow, shadowStrong, money } from '../theme';
-
-const QUICK_ACTIONS = [
-  { key: 'sale', label: 'New Sale', sub: 'Add sale quickly', icon: 'cart', fg: colors.green, bg: colors.greenSoft },
-  { key: 'products', label: 'Products', sub: 'View & manage', icon: 'cube', fg: colors.orange, bg: colors.orangeSoft },
-  { key: 'customers', label: 'Customers', sub: 'Credit & history', icon: 'people', fg: colors.purple, bg: colors.purpleSoft },
-  { key: 'reports', label: 'Reports', sub: 'Sales & profit', icon: 'bar-chart', fg: colors.pink, bg: colors.pinkSoft },
-];
-
-const EXAMPLES = [
-  '"Ramesh bought 5 shirts for 2500"',
-  '"Show today\'s sales"',
-  '"Check stock of rice"',
-];
 
 export default function HomeScreen() {
   const navigation = useNavigation();
+  const { t, lang } = useI18n();
   const { switchShop: switchShopState } = useShop();
   const [shop, setShop] = useState(null);
   const [report, setReport] = useState(null);
@@ -75,11 +66,13 @@ export default function HomeScreen() {
         .then((v) => setVoice(v))
         .catch(() => setVoice(null));
     } catch (e) {
-      setError(errorMessage(e, 'Server se connect nahi hua'));
+      setError(errorMessage(e, t('common.serverError')));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
+    // t changes with the language; the load itself does not depend on it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useFocusEffect(
@@ -93,31 +86,22 @@ export default function HomeScreen() {
     load({ silent: true });
   };
 
+  const shopName = shop?.shop_name || t('home.defaultShop');
+
   // Switching shops clears the shared shop state; App.js sees shop = null and
   // swaps the whole navigation tree for the code screen. This has to go
   // through context — Updates.reloadAsync() does not exist in Expo Go, which
   // is why the old version cleared the code but stayed on the old shop.
   const switchShop = () => {
-    Alert.alert(
-      'Dukaan badalni hai?',
-      `Abhi ${shopName} khuli hai. Naya code maanga jayega.`,
-      [
-        { text: 'Nahi', style: 'cancel' },
-        { text: 'Haan, badlo', style: 'destructive', onPress: () => switchShopState() },
-      ]
-    );
+    Alert.alert(t('home.switchTitle'), t('home.switchBody', { shop: shopName }), [
+      { text: t('home.switchNo'), style: 'cancel' },
+      { text: t('home.switchYes'), style: 'destructive', onPress: () => switchShopState() },
+    ]);
   };
 
   const goSale = () => navigation.navigate('HandsFree');
-  const onQuick = (key) => {
-    if (key === 'sale') return goSale();
-    if (key === 'products') return navigation.navigate('Products');
-    if (key === 'customers') return navigation.navigate('Customers');
-    if (key === 'reports') return navigation.navigate('Reports');
-  };
 
   const lowStockCount = report?.low_stock?.length || 0;
-  const shopName = shop?.shop_name || 'My Shop';
   const initials = shopName
     .split(/\s+/)
     .filter(Boolean)
@@ -130,32 +114,19 @@ export default function HomeScreen() {
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <View style={s.header}>
         <View style={s.brandRow}>
-          <View style={s.logoBox}>
-            <Ionicons name="storefront" size={20} color={colors.primary} />
-          </View>
-          <View>
-            <Text style={s.brand}>
-              BizMate <Text style={s.brandAi}>AI</Text>
-            </Text>
-            <Text style={s.tagline}>Your Smart Business Assistant</Text>
-          </View>
+          <Image source={require('../assets/brand/logo.png')} style={s.logo} />
+          <Text style={s.brand}>
+            BizMate <Text style={s.brandAi}>AI</Text>
+          </Text>
         </View>
 
         <View style={s.headerRight}>
-          <TouchableOpacity style={s.bell} onPress={() => navigation.navigate('Products')}>
-            <Ionicons name="notifications-outline" size={20} color={colors.text} />
-            {lowStockCount > 0 && (
-              <View style={s.badge}>
-                <Text style={s.badgeText}>{lowStockCount}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity style={s.shopChip} onPress={switchShop}>
+          <LanguageToggle />
+          <TouchableOpacity style={s.shopChip} onPress={switchShop} activeOpacity={0.8}>
             <View style={s.shopAvatar}>
               <Text style={s.shopAvatarText}>{initials || 'S'}</Text>
             </View>
             <Text style={s.shopChipText} numberOfLines={1}>{shopName}</Text>
-            <Ionicons name="chevron-down" size={14} color={colors.sub} />
           </TouchableOpacity>
         </View>
       </View>
@@ -176,13 +147,7 @@ export default function HomeScreen() {
           end={{ x: 1, y: 1 }}
           style={s.hero}
         >
-          <Text style={s.heroTitle}>
-            Just <Text style={s.heroTitleAccent}>Speak</Text>
-          </Text>
-          <Text style={s.heroSubtitle}>I'll handle the rest ✨</Text>
-          <Text style={s.heroCaption}>
-            Record sales, check stock, get reports{'\n'}— all with your voice.
-          </Text>
+          <Text style={s.heroTitle}>{t('home.heroTitle')}</Text>
 
           <TouchableOpacity onPress={goSale} activeOpacity={0.85} style={s.micWrap}>
             <View style={s.micRingOuter}>
@@ -193,39 +158,15 @@ export default function HomeScreen() {
                   end={{ x: 1, y: 1 }}
                   style={s.micBtn}
                 >
-                  <Ionicons name="mic" size={38} color="#fff" />
+                  <Ionicons name="mic" size={44} color="#fff" />
                 </LinearGradient>
               </View>
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity style={s.tapPill} onPress={goSale}>
-            <Text style={s.tapPillText}>Tap to speak</Text>
-            <Ionicons name="arrow-forward" size={15} color={colors.primary} />
-          </TouchableOpacity>
-
-          <View style={s.examples}>
-            {EXAMPLES.map((ex) => (
-              <View key={ex} style={s.exampleChip}>
-                <Text style={s.exampleText}>{ex}</Text>
-              </View>
-            ))}
-          </View>
+          <Text style={s.micLabel}>{t('home.micLabel')}</Text>
+          <Text style={s.example}>{t('home.example')}</Text>
         </LinearGradient>
-
-        {/* ── Quick access ─────────────────────────────────────────────── */}
-        <Text style={s.sectionTitle}>Quick Access</Text>
-        <View style={s.quickGrid}>
-          {QUICK_ACTIONS.map((a) => (
-            <TouchableOpacity key={a.key} style={s.quickCard} onPress={() => onQuick(a.key)}>
-              <View style={[s.quickIcon, { backgroundColor: a.bg }]}>
-                <Ionicons name={a.icon} size={22} color={a.fg} />
-              </View>
-              <Text style={s.quickLabel}>{a.label}</Text>
-              <Text style={s.quickSub} numberOfLines={1}>{a.sub}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
 
         {/* ── Voice Lock ───────────────────────────────────────────────── */}
         {/* Only shown when the lock is in use or still needs setup. In the
@@ -243,22 +184,22 @@ export default function HomeScreen() {
             ]}>
               <Ionicons
                 name={voice.enrolled ? 'shield-checkmark' : 'shield-outline'}
-                size={20}
+                size={22}
                 color={voice.enrolled ? colors.green : colors.orange}
               />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={s.voiceTitle}>
-                {voice.enrolled ? 'Voice Lock on' : 'Voice Lock: set up'}
+                {voice.enrolled ? t('home.voiceOn') : t('home.voiceSetup')}
               </Text>
               <Text style={s.voiceSub} numberOfLines={1}>
                 {voice.enrolled
-                  ? `${voice.samples || 0} clips registered · sirf aapki awaaz`
-                  : 'Apni awaaz register karein — 5 chhote clips'}
+                  ? t('home.voiceOnSub', { n: voice.samples || 0 })
+                  : t('home.voiceSetupSub')}
               </Text>
             </View>
             {!voice.service_up && voice.mode !== 'off' && (
-              <Text style={s.voiceOffBadge}>Lock off</Text>
+              <Text style={s.voiceOffBadge}>{t('home.voiceOff')}</Text>
             )}
             <Ionicons name="chevron-forward" size={18} color={colors.faint} />
           </TouchableOpacity>
@@ -266,11 +207,7 @@ export default function HomeScreen() {
 
         {/* ── Today's summary ──────────────────────────────────────────── */}
         <View style={s.sectionHead}>
-          <Text style={s.sectionTitle}>Today's Summary</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Reports')} style={s.viewMore}>
-            <Text style={s.viewMoreText}>View more</Text>
-            <Ionicons name="arrow-forward" size={13} color={colors.primary} />
-          </TouchableOpacity>
+          <Text style={s.sectionTitle}>{t('home.todayTitle')}</Text>
         </View>
 
         {loading && !report ? (
@@ -279,19 +216,20 @@ export default function HomeScreen() {
           <View style={s.summaryGrid}>
             <SummaryTile
               icon="cash" fg={colors.green} bg={colors.greenSoft}
-              value={money(report?.total_sales)} label="Total Sales"
+              value={money(report?.total_sales)} label={t('home.totalSales')}
             />
             <SummaryTile
-              icon="bag-handle" fg={colors.primary} bg={colors.primarySoft}
-              value={String(report?.transactions ?? 0)} label="Transactions"
+              icon="receipt" fg={colors.primary} bg={colors.primarySoft}
+              value={String(report?.transactions ?? 0)} label={t('home.bills')}
             />
             <SummaryTile
               icon="trending-up" fg={colors.orange} bg={colors.orangeSoft}
-              value={money(report?.total_profit)} label="Margin (known cost)"
+              value={money(report?.total_profit)} label={t('home.profit')}
+              onPress={() => navigation.navigate('Reports')}
             />
             <SummaryTile
               icon="cube" fg={colors.purple} bg={colors.purpleSoft}
-              value={String(lowStockCount)} label="Low Stock Items"
+              value={String(lowStockCount)} label={t('home.lowStock')}
               onPress={() => navigation.navigate('Products')}
             />
           </View>
@@ -299,20 +237,20 @@ export default function HomeScreen() {
 
         {/* ── Recent sales ─────────────────────────────────────────────── */}
         <View style={s.sectionHead}>
-          <Text style={s.sectionTitle}>Recent Sales</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Reports')} style={s.viewMore}>
-            <Text style={s.viewMoreText}>See all</Text>
+          <Text style={s.sectionTitle}>{t('home.recentTitle')}</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Reports')} style={s.viewMore} hitSlop={{ top: 10, bottom: 10, left: 10, right: 6 }}>
+            <Text style={s.viewMoreText}>{t('home.seeAll')}</Text>
             <Ionicons name="arrow-forward" size={13} color={colors.primary} />
           </TouchableOpacity>
         </View>
 
         <View style={s.recentCard}>
           {recent.length === 0 ? (
-            <Text style={s.emptyText}>
-              Abhi tak koi sale nahi.{'\n'}Mic dabao aur pehli bill banao.
-            </Text>
+            <Text style={s.emptyText}>{t('home.empty')}</Text>
           ) : (
-            recent.map((t, i) => <SaleRow key={t.transaction_id} txn={t} last={i === recent.length - 1} />)
+            recent.map((txn, i) => (
+              <SaleRow key={txn.transaction_id} txn={txn} last={i === recent.length - 1} t={t} />
+            ))
           )}
         </View>
 
@@ -325,30 +263,30 @@ export default function HomeScreen() {
 function SummaryTile({ icon, fg, bg, value, label, onPress }) {
   const Wrap = onPress ? TouchableOpacity : View;
   return (
-    <Wrap style={s.summaryTile} onPress={onPress}>
+    <Wrap style={s.summaryTile} onPress={onPress} activeOpacity={0.8}>
       <View style={[s.summaryIcon, { backgroundColor: bg }]}>
-        <Ionicons name={icon} size={18} color={fg} />
+        <Ionicons name={icon} size={20} color={fg} />
       </View>
       <Text style={s.summaryValue} numberOfLines={1} adjustsFontSizeToFit>
         {value}
       </Text>
-      <Text style={s.summaryLabel}>{label}</Text>
+      <Text style={s.summaryLabel} numberOfLines={1}>{label}</Text>
     </Wrap>
   );
 }
 
 // "2× Dettol Sabun, 1× Chini" -> a one-line summary that fits the row.
-function itemSummary(txn) {
+function itemSummary(txn, t) {
   const items = txn.items || [];
   if (items.length === 0) return '—';
   const parts = items.slice(0, 2).map((it) => `${it.quantity}× ${it.product_name}`);
-  if (items.length > 2) parts.push(`+${items.length - 2} more`);
+  if (items.length > 2) parts.push(t('home.moreItems', { n: items.length - 2 }));
   return parts.join(', ');
 }
 
-// The shopkeeper recognises a repeating customer by the last 4 digits, and the
+// The shopkeeper recognises a repeating customer by the phone number, and the
 // phone is all the voice flow collects — so that's what the row shows.
-function SaleRow({ txn, last }) {
+function SaleRow({ txn, last, t }) {
   const phone = txn.customer_phone || '';
   const shortPhone = phone ? phone.replace(/^91/, '').replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2$3') : '';
   const initial = phone.slice(-1) || '?';
@@ -367,10 +305,10 @@ function SaleRow({ txn, last }) {
       </View>
       <View style={{ flex: 1 }}>
         <Text style={s.saleName} numberOfLines={1}>
-          {shortPhone || 'Customer'}
-          {txn.payment_status === 'credit' ? '  ·  Udaar' : ''}
+          {shortPhone || t('home.customer')}
+          {txn.payment_status === 'credit' ? `  ·  ${t('home.credit')}` : ''}
         </Text>
-        <Text style={s.saleItems} numberOfLines={1}>{itemSummary(txn)}</Text>
+        <Text style={s.saleItems} numberOfLines={1}>{itemSummary(txn, t)}</Text>
       </View>
       <View style={{ alignItems: 'flex-end' }}>
         <Text style={s.saleAmount}>{money(txn.total_amount)}</Text>
@@ -384,128 +322,94 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 18, paddingTop: 54, paddingBottom: 10,
+    paddingHorizontal: 18, paddingTop: 52, paddingBottom: 10,
   },
   brandRow: { flexDirection: 'row', alignItems: 'center', flexShrink: 1 },
-  logoBox: {
-    width: 36, height: 36, borderRadius: 10, backgroundColor: colors.primarySoft,
-    alignItems: 'center', justifyContent: 'center', marginRight: 9,
-  },
+  logo: { width: 36, height: 36, borderRadius: 10, marginRight: 9 },
   brand: { fontSize: 19, fontWeight: '800', color: colors.text, letterSpacing: -0.3 },
   brandAi: { color: colors.primary },
-  tagline: { fontSize: 10.5, color: colors.sub, marginTop: 1 },
-  headerRight: { flexDirection: 'row', alignItems: 'center' },
-  bell: { padding: 7, marginRight: 6 },
-  badge: {
-    position: 'absolute', top: 2, right: 2, minWidth: 16, height: 16, borderRadius: 8,
-    backgroundColor: colors.red, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3,
-  },
-  badgeText: { color: '#fff', fontSize: 9.5, fontWeight: '800' },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   shopChip: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card,
-    borderRadius: 20, paddingVertical: 5, paddingLeft: 5, paddingRight: 10, maxWidth: 170,
+    borderRadius: 20, paddingVertical: 4, paddingLeft: 4, paddingRight: 10, maxWidth: 120,
     borderWidth: 1, borderColor: colors.line,
   },
   shopAvatar: {
     width: 26, height: 26, borderRadius: 13, backgroundColor: colors.primarySoft,
-    alignItems: 'center', justifyContent: 'center', marginRight: 7,
+    alignItems: 'center', justifyContent: 'center', marginRight: 6,
   },
   shopAvatarText: { color: colors.primary, fontSize: 11, fontWeight: '800' },
-  shopChipText: { color: colors.text, fontSize: 12, fontWeight: '700', marginRight: 4, flexShrink: 1 },
+  shopChipText: { color: colors.text, fontSize: 12, fontWeight: '700', flexShrink: 1 },
 
   scroll: { paddingHorizontal: 18, paddingBottom: 20 },
-  errorText: { color: colors.red, fontSize: 12, marginBottom: 10 },
+  errorText: { color: colors.red, fontSize: 13, marginBottom: 10 },
 
   // Hero
   hero: {
-    borderRadius: 24, paddingTop: 22, paddingBottom: 16, paddingHorizontal: 16,
+    borderRadius: 24, paddingTop: 22, paddingBottom: 20, paddingHorizontal: 16,
     alignItems: 'center', marginTop: 4, borderWidth: 1, borderColor: '#E3ECFF',
   },
-  heroTitle: { fontSize: 27, fontWeight: '800', color: colors.text, letterSpacing: -0.5 },
-  heroTitleAccent: { color: colors.primary },
-  heroSubtitle: { fontSize: 15, fontWeight: '700', color: colors.text, marginTop: 2 },
-  heroCaption: { fontSize: 12.5, color: colors.sub, textAlign: 'center', marginTop: 8, lineHeight: 18 },
+  heroTitle: { fontSize: 22, fontWeight: '800', color: colors.text, letterSpacing: -0.3, textAlign: 'center' },
 
-  micWrap: { marginTop: 18, marginBottom: 12 },
+  micWrap: { marginTop: 16, marginBottom: 10 },
   micRingOuter: {
-    width: 168, height: 168, borderRadius: 84, backgroundColor: 'rgba(37,99,235,0.08)',
+    width: 176, height: 176, borderRadius: 88, backgroundColor: 'rgba(37,99,235,0.08)',
     alignItems: 'center', justifyContent: 'center',
   },
   micRingInner: {
-    width: 128, height: 128, borderRadius: 64, backgroundColor: 'rgba(37,99,235,0.12)',
+    width: 136, height: 136, borderRadius: 68, backgroundColor: 'rgba(37,99,235,0.12)',
     alignItems: 'center', justifyContent: 'center',
   },
   micBtn: {
-    width: 92, height: 92, borderRadius: 46, alignItems: 'center', justifyContent: 'center',
+    width: 100, height: 100, borderRadius: 50, alignItems: 'center', justifyContent: 'center',
     ...shadowStrong,
   },
-  tapPill: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card,
-    borderRadius: 20, paddingVertical: 8, paddingHorizontal: 16, ...shadow,
-  },
-  tapPillText: { color: colors.text, fontSize: 12.5, fontWeight: '700', marginRight: 6 },
-
-  examples: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginTop: 14, gap: 6 },
-  exampleChip: {
-    backgroundColor: 'rgba(255,255,255,0.75)', borderWidth: 1, borderColor: '#E3ECFF',
-    borderRadius: 12, paddingVertical: 7, paddingHorizontal: 10, maxWidth: '48%',
-  },
-  exampleText: { color: colors.sub, fontSize: 10.5, fontWeight: '600' },
+  micLabel: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  example: { color: colors.sub, fontSize: 12.5, marginTop: 6, textAlign: 'center' },
 
   // Sections
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginTop: 20, marginBottom: 10 },
-  sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, marginBottom: 10 },
+  sectionTitle: { fontSize: 16, fontWeight: '800', color: colors.text },
+  sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 22, marginBottom: 10 },
   viewMore: { flexDirection: 'row', alignItems: 'center' },
-  viewMoreText: { color: colors.primary, fontSize: 12.5, fontWeight: '700', marginRight: 3 },
-
-  quickGrid: { flexDirection: 'row', gap: 10 },
+  viewMoreText: { color: colors.primary, fontSize: 13, fontWeight: '700', marginRight: 3 },
 
   voiceCard: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card,
-    borderRadius: 16, padding: 13, marginTop: 12, ...shadow,
+    borderRadius: 16, padding: 13, marginTop: 14, ...shadow,
   },
   voiceIcon: {
-    width: 40, height: 40, borderRadius: 12, alignItems: 'center',
+    width: 42, height: 42, borderRadius: 12, alignItems: 'center',
     justifyContent: 'center', marginRight: 11,
   },
-  voiceTitle: { fontSize: 13.5, fontWeight: '800', color: colors.text },
-  voiceSub: { fontSize: 11.5, color: colors.sub, marginTop: 2 },
+  voiceTitle: { fontSize: 14, fontWeight: '800', color: colors.text },
+  voiceSub: { fontSize: 12, color: colors.sub, marginTop: 2 },
   voiceOffBadge: {
-    fontSize: 10, fontWeight: '800', color: colors.orange, backgroundColor: colors.orangeSoft,
+    fontSize: 11, fontWeight: '800', color: colors.orange, backgroundColor: colors.orangeSoft,
     borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, marginRight: 6,
   },
-  quickCard: {
-    flex: 1, backgroundColor: colors.card, borderRadius: 16, paddingVertical: 13,
-    paddingHorizontal: 6, alignItems: 'center', ...shadow,
-  },
-  quickIcon: {
-    width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginBottom: 8,
-  },
-  quickLabel: { fontSize: 12.5, fontWeight: '700', color: colors.text },
-  quickSub: { fontSize: 9.5, color: colors.faint, marginTop: 2 },
 
   summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   summaryTile: {
     width: '48.5%', flexGrow: 1, backgroundColor: colors.card, borderRadius: 16,
-    padding: 13, ...shadow,
+    padding: 14, ...shadow,
   },
   summaryIcon: {
-    width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 10,
+    width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginBottom: 10,
   },
-  summaryValue: { fontSize: 20, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
-  summaryLabel: { fontSize: 11.5, color: colors.sub, marginTop: 2, fontWeight: '600' },
+  summaryValue: { fontSize: 22, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
+  summaryLabel: { fontSize: 12.5, color: colors.sub, marginTop: 2, fontWeight: '600' },
 
   recentCard: { backgroundColor: colors.card, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 4, ...shadow },
   saleRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
   saleRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.line },
   saleAvatar: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primarySoft,
+    width: 38, height: 38, borderRadius: 19, backgroundColor: colors.primarySoft,
     alignItems: 'center', justifyContent: 'center', marginRight: 11,
   },
   saleAvatarText: { color: colors.primary, fontSize: 14, fontWeight: '800' },
-  saleName: { fontSize: 13.5, fontWeight: '700', color: colors.text },
-  saleItems: { fontSize: 11.5, color: colors.sub, marginTop: 2 },
-  saleAmount: { fontSize: 13.5, fontWeight: '800', color: colors.text },
-  saleTime: { fontSize: 10.5, color: colors.faint, marginTop: 2 },
-  emptyText: { color: colors.faint, fontSize: 12.5, textAlign: 'center', lineHeight: 19, paddingVertical: 22 },
+  saleName: { fontSize: 14, fontWeight: '700', color: colors.text },
+  saleItems: { fontSize: 12, color: colors.sub, marginTop: 2 },
+  saleAmount: { fontSize: 14, fontWeight: '800', color: colors.text },
+  saleTime: { fontSize: 11, color: colors.faint, marginTop: 2 },
+  emptyText: { color: colors.sub, fontSize: 13, textAlign: 'center', lineHeight: 20, paddingVertical: 22 },
 });
