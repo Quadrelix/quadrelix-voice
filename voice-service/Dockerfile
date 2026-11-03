@@ -17,13 +17,18 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --default-timeout=300 --retries 8 \
       --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
 
-COPY main.py speaker.py store.py ./
+COPY main.py speaker.py store.py pgstore.py ./
+
+# Run as a non-root user (Hugging Face Spaces requires it; good practice anyway).
+RUN useradd -m -u 1000 user && mkdir -p /data && chown -R user:user /app /data
+USER user
 
 # Bake the pretrained ECAPA model into the image so the first request does not
 # depend on Hugging Face being reachable.
 RUN python -c "import speaker; speaker.load_model()"
 
 # Enrollments and the verify log live on a mounted volume so a redeploy keeps them.
+# (Set VOICE_DATABASE_URL to keep them in Postgres instead — see pgstore.py.)
 ENV VOICE_DATA_DIR=/data
 VOLUME ["/data"]
 

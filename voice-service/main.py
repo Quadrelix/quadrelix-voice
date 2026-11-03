@@ -34,6 +34,7 @@ import logging
 import os
 import shutil
 import tempfile
+import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -45,6 +46,7 @@ os.environ["PYTHONUTF8"] = "1"
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 
+import pgstore
 import speaker
 import store
 
@@ -87,6 +89,10 @@ async def lifespan(app: FastAPI):
         logger.info("Token auth: ENABLED")
     else:
         logger.warning("Token auth: DISABLED (VOICE_SERVICE_TOKEN is empty) — dev only")
+    if pgstore.enabled():
+        pgstore.ensure_schema()
+    else:
+        logger.info("Persistence: files under %s", VERIFY_LOG.parent)
     speaker.load_model()
     speaker.warm_up()
     logger.info("Model ready (threshold=%.2f).", _threshold())
@@ -153,6 +159,19 @@ def _save_upload(upload: UploadFile) -> str:
     return tmp.name
 
 
+def _append_pg_log(line: dict) -> None:
+    try:
+        pgstore.append_log(line)
+    except Exception as e:
+        # Fall back to the file so the row is not lost if Postgres is unreachable.
+        logger.warning("Postgres verify log failed (%s); writing to file", e)
+        try:
+            with open(VERIFY_LOG, "a", encoding="utf-8") as f:
+                f.write(json.dumps(line) + "\n")
+        except Exception as e2:
+            logger.warning("Could not write verify log: %s", e2)
+
+
 def _log_verify(speaker_id: str, score: float, threshold: float, duration: float, decision: str):
     """
     Append one JSON line per verify. Never stores audio — only the numbers
@@ -167,6 +186,10 @@ def _log_verify(speaker_id: str, score: float, threshold: float, duration: float
             "duration_s": round(float(duration), 2),
             "decision": decision,
         }
+        if pgstore.enabled():
+            # Off the request thread: a Neon cold start must not slow a verify.
+            threading.Thread(target=_append_pg_log, args=(line,), daemon=True).start()
+            return
         with open(VERIFY_LOG, "a", encoding="utf-8") as f:
             f.write(json.dumps(line) + "\n")
     except Exception as e:  # logging must never fail a verify
@@ -183,10 +206,15 @@ def health():
     Fast, unauthenticated status. Called by Node at startup and for the
     'Voice Lock off' badge in the app.
     """
+    try:
+        enrolled = store.is_enrolled(DEFAULT_SPEAKER)
+    except Exception as e:  # a database hiccup must not look like "service down"
+        logger.warning("health: could not read store (%s)", e)
+        enrolled = False
     return {
         "status": "ok",
         "model": "ecapa-voxceleb",
-        "enrolled": store.is_enrolled(DEFAULT_SPEAKER),
+        "enrolled": enrolled,
         "threshold": _threshold(),
     }
 
