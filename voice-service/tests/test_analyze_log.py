@@ -95,3 +95,16 @@ def test_cli_runs_end_to_end(tmp_path, capsys):
     out = capsys.readouterr().out
     assert code == 0
     assert "RECOMMENDED threshold" in out
+
+
+def test_assume_owner_counts_normal_billing_rows_as_the_owner():
+    billing = [{"speaker_id": "shop_a_owner", "score": s, "decision": "accepted"} for s in (0.82, 0.77, 0.69)]
+    data = billing + rows("other", [0.2, 0.1]) + rows("tv", [0.15])
+
+    scores, _, unlabelled = al.prepare(data)  # default: unlabelled rows are ignored
+    assert "owner_billing" not in scores and unlabelled == 3
+
+    scores, _, unlabelled = al.prepare(data, assume_owner=True)
+    assert scores["owner_billing"] == [0.82, 0.77, 0.69] and unlabelled == 0
+    best, why = al.recommend(al.sweep(scores, 0.20, 0.60, 0.02))
+    assert why == "ok" and best["false_accepts"] == 0 and best["false_rejects"] == 0

@@ -744,6 +744,7 @@ const publicShop = (shop) => ({
   shop_type: shop.shop_type,
   upi_id: shop.upi_id,
   owner_phone: shop.owner_phone,
+  bill_footer: shop.bill_footer ?? null,
 });
 
 router.get("/shop", async (req, res) => {
@@ -753,15 +754,19 @@ router.get("/shop", async (req, res) => {
 });
 
 /**
- * The owner sets their OWN payment details after logging in with the shop code,
- * so the founder never has to collect them. Only the UPI id (where customers pay)
- * and the contact phone printed on the bill can be changed here.
+ * The owner sets up THEIR shop after logging in with the shop code, so the founder
+ * never has to collect these: the name and phone printed at the top of every bill,
+ * the UPI id customers pay to, and a short thank-you note (1-2 lines) printed at
+ * the bottom. Nothing else about a shop (active flag, code, type) can be changed here.
  *
  * A UPI id decides where customers' money goes, so it is validated, changes are
- * rate-limited per shop and logged (which field, never the value). Until the
+ * rate-limited per shop and logged (which fields, never the values). Until the
  * owner has a login beyond the shop code, treat the code like a password.
  */
 const UPI_ID = /^[a-z0-9._-]{2,64}@[a-z][a-z0-9.-]{1,30}$/i;
+const SHOP_NAME_MAX = 60;
+const FOOTER_MAX_LINES = 2;
+const FOOTER_LINE_MAX = 80;
 const shopEditLimits = [rateLimit({ windowMs: 60 * 60 * 1000, max: 10, key: byShop })];
 
 function cleanPhone(raw) {
@@ -771,10 +776,29 @@ function cleanPhone(raw) {
   return /^[6-9]\d{9}$/.test(digits) ? digits : null;
 }
 
+// "  Thanks for shopping.\n\nPlease visit again  " -> "Thanks for shopping.\nPlease visit again"
+// null when the note is too long for a bill footer (more than 2 lines / 80 chars a line).
+function cleanBillNote(raw) {
+  const lines = String(raw ?? "")
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((l) => l.replace(/[ \t]+/g, " ").trim())
+    .filter(Boolean);
+  if (lines.length > FOOTER_MAX_LINES || lines.some((l) => [...l].length > FOOTER_LINE_MAX)) return null;
+  return lines.join("\n");
+}
+
 router.patch("/shop", shopGate, ...shopEditLimits, async (req, res) => {
   const body = req.body || {};
   const patch = {};
 
+  if (body.shop_name !== undefined) {
+    const name = String(body.shop_name ?? "").replace(/[\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim();
+    if (name.length < 2 || [...name].length > SHOP_NAME_MAX) {
+      return res.status(400).json({ error: "Dukaan ka naam 2 se 60 akshar ka hona chahiye", code: "bad_name" });
+    }
+    patch.shop_name = name;
+  }
   if (body.upi_id !== undefined) {
     const upi = String(body.upi_id ?? "").trim();
     if (upi && !UPI_ID.test(upi)) {
@@ -792,8 +816,18 @@ router.patch("/shop", shopGate, ...shopEditLimits, async (req, res) => {
       patch.owner_phone = null;
     }
   }
+  if (body.bill_footer !== undefined) {
+    const note = cleanBillNote(body.bill_footer);
+    if (note === null) {
+      return res.status(400).json({
+        error: `Bill ka message sirf ${FOOTER_MAX_LINES} line ka ho sakta hai, har line ${FOOTER_LINE_MAX} akshar tak`,
+        code: "bad_footer",
+      });
+    }
+    patch.bill_footer = note || null;
+  }
   if (!Object.keys(patch).length) {
-    return res.status(400).json({ error: "upi_id ya owner_phone bhejein", code: "nothing_to_update" });
+    return res.status(400).json({ error: "Kuch badalne ko bheja nahi gaya", code: "nothing_to_update" });
   }
 
   try {

@@ -87,14 +87,17 @@ function footerLayout(text) {
   const probe = createCanvas(1, 1).getContext("2d");
   const maxWidth = WIDTH - 2 * MARGIN;
   const lines = [];
-  let firstContent = true;
+  // A short note (1-2 lines, what owners write) is plain text. A longer footer written by
+  // the founder keeps a bold heading on its first line.
+  const contentLines = clean.filter(Boolean).length;
+  let firstContent = contentLines >= 3;
   for (const raw of clean) {
     if (raw === "") {
       // collapse runs of blank lines into one gap
       if (lines.length && lines[lines.length - 1].blank !== true) lines.push({ blank: true });
       continue;
     }
-    const bold = firstContent; // the first line is the shop's heading
+    const bold = firstContent; // the first line of a longer footer is its heading
     firstContent = false;
     probe.font = bold ? font(20, "bold") : font(16);
     let current = "";
@@ -146,8 +149,8 @@ async function generateBillImage({ transaction, shop }) {
   let y = MARGIN + 26;
 
   // Shop header
-  ctx.font = font(30, "bold");
-  ctx.fillText(shop.shop_name, MARGIN, y);
+  ctx.font = shopNameFont(ctx, shop.shop_name);
+  ctx.fillText(fitToWidth(ctx, shop.shop_name, WIDTH - 2 * MARGIN), MARGIN, y);
   y += 30;
 
   if (hasPhone) {
@@ -283,6 +286,16 @@ function quantityLabel(item) {
 //
 // Cuts on grapheme boundaries so a name is never sliced between a consonant and
 // its vowel sign — "साड़ी" cut by code unit would leave a stranded "ा".
+// The shop name is the owner's own text: shrink it (30px down to 20px) until it fits the
+// bill width, and only then let fitToWidth cut it with an ellipsis.
+function shopNameFont(ctx, name) {
+  for (let size = 30; size >= 20; size -= 2) {
+    ctx.font = font(size, "bold");
+    if (ctx.measureText(String(name ?? "")).width <= WIDTH - 2 * MARGIN) return font(size, "bold");
+  }
+  return font(20, "bold");
+}
+
 function fitToWidth(ctx, text, maxWidth) {
   const str = String(text ?? "");
   if (ctx.measureText(str).width <= maxWidth) return str;

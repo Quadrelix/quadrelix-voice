@@ -239,11 +239,21 @@ export async function getShop() {
 // Validate a shop code the owner just typed, BEFORE it is stored. Sends the
 // code explicitly rather than relying on the interceptor, because at this
 // moment no shop is active yet.
-// The owner enters their own payment details after logging in with the shop code.
-// Throws with response.data.code = 'bad_upi' | 'bad_phone' on invalid input.
-export async function updateShopDetails({ upi_id, owner_phone }) {
-  const res = await api.patch("/api/shop", { upi_id, owner_phone });
-  return res.data.shop; // { shop_id, shop_name, shop_type, upi_id, owner_phone }
+// The owner edits their own shop after logging in with the shop code: the name and
+// phone printed on the bill, the UPI id, and a 1-2 line note under the bill.
+// Throws with response.data.code = 'bad_name' | 'bad_phone' | 'bad_upi' | 'bad_footer'.
+export async function updateShopDetails({ shop_name, owner_phone, upi_id, bill_footer }) {
+  const res = await api.patch("/api/shop", { shop_name, owner_phone, upi_id, bill_footer });
+  return res.data.shop; // { shop_id, shop_name, shop_type, upi_id, owner_phone, bill_footer }
+}
+
+// First screen of a new phone: the shop is not stored yet, so the code goes in
+// explicitly (the interceptor would otherwise send no code at all).
+export async function setupShop(shopCode, { shop_name, owner_phone }) {
+  const res = await api.patch("/api/shop", { shop_name, owner_phone }, {
+    headers: { "X-Shop-Code": shopCode },
+  });
+  return res.data.shop;
 }
 
 export async function lookupShopByCode(shopCode) {
