@@ -177,6 +177,24 @@ export async function verifyAndTranscribeAudio(fileUri) {
   return res.data; // { text, allowed, speaker_verified, reason, lock_state }
 }
 
+// Calibration (team testing the voice lock): score a clip and log it with a label
+// ("owner", "other", "tv", ...). No transcript, no bill, no audio kept.
+export async function calibrateVoice(fileUri, label) {
+  const formData = new FormData();
+  formData.append("label", label);
+  formData.append("audio", {
+    uri: fileUri,
+    name: "calibrate.m4a",
+    type: "audio/m4a",
+  });
+
+  const res = await api.post("/api/calibrate-voice", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 30000,
+  });
+  return res.data; // { status: 'ok'|'not_enrolled', label, score, threshold, is_speaker, reason }
+}
+
 export async function enrollVoice(fileUri) {
   const formData = new FormData();
   formData.append("audio", {

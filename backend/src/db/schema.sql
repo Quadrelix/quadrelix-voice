@@ -65,3 +65,6 @@ UPDATE transactions SET finalized_at = created_at
  WHERE finalized_at IS NULL AND bill_image_path IS NOT NULL;
 UPDATE transactions SET delivery_status = 'sent'
  WHERE status = 'sent' AND delivery_status = 'none';
+
+-- Optional text printed at the bottom of every bill (thank-you note, tagline).
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS bill_footer TEXT;

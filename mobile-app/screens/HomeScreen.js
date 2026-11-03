@@ -9,7 +9,7 @@
 // It refreshes on focus, so returning from a voice sale updates the summary
 // immediately.
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -101,6 +101,18 @@ export default function HomeScreen() {
 
   const goSale = () => navigation.navigate('HandsFree');
 
+  const logoTaps = useRef({ n: 0, last: 0 });
+  const onLogoTap = () => {
+    const now = Date.now();
+    const taps = logoTaps.current;
+    taps.n = now - taps.last < 1500 ? taps.n + 1 : 1; // taps must come quickly one after another
+    taps.last = now;
+    if (taps.n >= 5) {
+      taps.n = 0;
+      navigation.navigate('Calibrate');
+    }
+  };
+
   const lowStockCount = report?.low_stock?.length || 0;
   const initials = shopName
     .split(/\s+/)
@@ -114,7 +126,10 @@ export default function HomeScreen() {
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <View style={s.header}>
         <View style={s.brandRow}>
-          <Image source={require('../assets/brand/logo.png')} style={s.logo} />
+          {/* Five quick taps on the logo open the team's voice test (hidden from shopkeepers). */}
+          <TouchableOpacity activeOpacity={1} onPress={onLogoTap}>
+            <Image source={require('../assets/brand/logo.png')} style={s.logo} />
+          </TouchableOpacity>
           <Text style={s.brand}>
             BizMate <Text style={s.brandAi}>AI</Text>
           </Text>

@@ -32,6 +32,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import shutil
 import tempfile
 import threading
@@ -172,7 +173,13 @@ def _append_pg_log(line: dict) -> None:
             logger.warning("Could not write verify log: %s", e2)
 
 
-def _log_verify(speaker_id: str, score: float, threshold: float, duration: float, decision: str):
+def _clean_label(label) -> str:
+    """Calibration label (owner / other / tv ...): short, lowercase, [a-z0-9_-] only."""
+    return re.sub(r"[^a-z0-9_-]", "", str(label or "").lower())[:24]
+
+
+def _log_verify(speaker_id: str, score: float, threshold: float, duration: float, decision: str,
+                label: str = ""):
     """
     Append one JSON line per verify. Never stores audio — only the numbers
     needed to tune the threshold later from real shop use (M6).
@@ -185,6 +192,7 @@ def _log_verify(speaker_id: str, score: float, threshold: float, duration: float
             "threshold": round(float(threshold), 4),
             "duration_s": round(float(duration), 2),
             "decision": decision,
+            "label": _clean_label(label) or None,
         }
         if pgstore.enabled():
             # Off the request thread: a Neon cold start must not slow a verify.
@@ -297,6 +305,7 @@ def enroll(
 def verify(
     audio: UploadFile = File(..., description="Audio clip (.m4a or .wav), min 1.5s"),
     speaker_id: str = Form(DEFAULT_SPEAKER, description="Speaker identifier"),
+    label: str = Form("", description="Optional calibration label (owner/other/tv...), logged with the score"),
 ):
     """
     Compare audio clip against stored owner embedding.
@@ -324,7 +333,7 @@ def verify(
         vec, duration = speaker.embed_with_meta(tmp_path)
     except speaker.ClipTooShortError:
         logger.info("/verify speaker='%s' result=too_short", speaker_id)
-        _log_verify(speaker_id, 0.0, _threshold(), 0.0, "too_short")
+        _log_verify(speaker_id, 0.0, _threshold(), 0.0, "too_short", label)
         return {
             "speaker_id": speaker_id,
             "score": 0.0,
@@ -347,7 +356,7 @@ def verify(
         "/verify speaker='%s' score=%.4f is_speaker=%s threshold=%.2f duration=%.2fs",
         speaker_id, score, is_speaker, threshold, duration,
     )
-    _log_verify(speaker_id, score, threshold, duration, "accepted" if is_speaker else "rejected")
+    _log_verify(speaker_id, score, threshold, duration, "accepted" if is_speaker else "rejected", label)
 
     return {
         "speaker_id": speaker_id,

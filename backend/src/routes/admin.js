@@ -30,21 +30,34 @@ function requireAdmin(req, res, next) {
 
 router.use(requireAdmin);
 
+const FOOTER_MAX = 600;
+const FOOTER_TOO_LONG = `bill_footer must be at most ${FOOTER_MAX} characters`;
+// null/"" clears the footer; false means too long.
+function cleanFooter(value) {
+  if (value === undefined || value === null) return null;
+  const text = String(value).replace(/\r\n/g, "\n").trim();
+  if (text.length > FOOTER_MAX) return false;
+  return text || null;
+}
+
 /**
  * Create a shop and return its code.
- * body: { shop_name, shop_type?, upi_id?, owner_phone? }
+ * body: { shop_name, shop_type?, upi_id?, owner_phone?, bill_footer? }
  */
 router.post("/shops", async (req, res) => {
-  const { shop_name, shop_type, upi_id, owner_phone } = req.body || {};
+  const { shop_name, shop_type, upi_id, owner_phone, bill_footer } = req.body || {};
   if (!shop_name || !String(shop_name).trim()) {
     return res.status(400).json({ error: "shop_name is required" });
   }
+  const footer = cleanFooter(bill_footer);
+  if (footer === false) return res.status(400).json({ error: FOOTER_TOO_LONG });
   try {
     const shop = await db.createShop({
       shop_name: String(shop_name).trim(),
       shop_type: shop_type ? String(shop_type).trim() : null,
       upi_id: upi_id ? String(upi_id).trim() : null,
       owner_phone: owner_phone ? String(owner_phone).replace(/\D/g, "") : null,
+      bill_footer: footer,
     });
     res.status(201).json({ shop });
   } catch (e) {
@@ -61,10 +74,16 @@ router.get("/shops", async (req, res) => {
   }
 });
 
-/** Update name / UPI / phone / active. */
+/** Update name / UPI / phone / bill_footer / active. */
 router.patch("/shops/:id", async (req, res) => {
   try {
-    const shop = await db.updateShop(req.params.id, req.body || {});
+    const patch = { ...(req.body || {}) };
+    if (patch.bill_footer !== undefined) {
+      const footer = cleanFooter(patch.bill_footer);
+      if (footer === false) return res.status(400).json({ error: FOOTER_TOO_LONG });
+      patch.bill_footer = footer;
+    }
+    const shop = await db.updateShop(req.params.id, patch);
     if (!shop) return res.status(404).json({ error: "Shop not found" });
     res.json({ shop });
   } catch (e) {

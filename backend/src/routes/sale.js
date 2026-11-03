@@ -922,6 +922,39 @@ router.post("/enroll-voice", shopGate, ...audioLimits, upload.single("audio"), a
 });
 
 /**
+ * Calibration: score one clip against this shop's enrolled voice and log it with
+ * a label ("owner", "other", "tv", ...), so the real shop recordings can later be
+ * turned into a threshold (voice-service/analyze_log.py). It never transcribes,
+ * never touches a bill, and stores no audio — only the score and the label.
+ * Works in every lock mode, since measuring is the point.
+ */
+const CALIBRATION_LABEL = /^[a-z0-9_-]{1,24}$/;
+
+router.post("/calibrate-voice", shopGate, ...audioLimits, upload.single("audio"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "audio file required" });
+    const label = String(req.body?.label || "").trim().toLowerCase();
+    if (!CALIBRATION_LABEL.test(label)) {
+      return res.status(400).json({ error: "label must be 1-24 characters: a-z, 0-9, _ or -" });
+    }
+    const result = await voice.verifySpeaker(req.file.path, req.shop.shop_id, { label });
+    if (result.status === "not_enrolled") return res.json({ status: "not_enrolled", label });
+    return res.json({
+      status: "ok",
+      label,
+      score: result.score,
+      threshold: result.threshold,
+      is_speaker: result.is_speaker,
+      reason: result.reason || null,
+    });
+  } catch (err) {
+    return res.status(502).json({ error: "Voice service se connect nahi hua: " + err.message });
+  } finally {
+    discardUpload(req);
+  }
+});
+
+/**
  * What the app shows on the voice screen: enrolled? mode? service up?
  */
 router.get("/voice-status", async (req, res) => {
