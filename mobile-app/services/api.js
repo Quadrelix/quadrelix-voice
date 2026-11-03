@@ -239,6 +239,13 @@ export async function getShop() {
 // Validate a shop code the owner just typed, BEFORE it is stored. Sends the
 // code explicitly rather than relying on the interceptor, because at this
 // moment no shop is active yet.
+// The owner enters their own payment details after logging in with the shop code.
+// Throws with response.data.code = 'bad_upi' | 'bad_phone' on invalid input.
+export async function updateShopDetails({ upi_id, owner_phone }) {
+  const res = await api.patch("/api/shop", { upi_id, owner_phone });
+  return res.data.shop; // { shop_id, shop_name, shop_type, upi_id, owner_phone }
+}
+
 export async function lookupShopByCode(shopCode) {
   const res = await api.get("/api/shop", {
     headers: { "X-Shop-Code": shopCode },

@@ -738,18 +738,72 @@ router.get("/report/daily", async (req, res) => {
  * just been given a code calls this and, on 200, knows the code is real.
  * Deliberately returns only what the app needs — never the code list.
  */
+const publicShop = (shop) => ({
+  shop_id: shop.shop_id,
+  shop_name: shop.shop_name,
+  shop_type: shop.shop_type,
+  upi_id: shop.upi_id,
+  owner_phone: shop.owner_phone,
+});
+
 router.get("/shop", async (req, res) => {
   const shop = await requireShop(req, res);
   if (!shop) return;
-  res.json({
-    shop: {
-      shop_id: shop.shop_id,
-      shop_name: shop.shop_name,
-      shop_type: shop.shop_type,
-      upi_id: shop.upi_id,
-      owner_phone: shop.owner_phone,
-    },
-  });
+  res.json({ shop: publicShop(shop) });
+});
+
+/**
+ * The owner sets their OWN payment details after logging in with the shop code,
+ * so the founder never has to collect them. Only the UPI id (where customers pay)
+ * and the contact phone printed on the bill can be changed here.
+ *
+ * A UPI id decides where customers' money goes, so it is validated, changes are
+ * rate-limited per shop and logged (which field, never the value). Until the
+ * owner has a login beyond the shop code, treat the code like a password.
+ */
+const UPI_ID = /^[a-z0-9._-]{2,64}@[a-z][a-z0-9.-]{1,30}$/i;
+const shopEditLimits = [rateLimit({ windowMs: 60 * 60 * 1000, max: 10, key: byShop })];
+
+function cleanPhone(raw) {
+  let digits = String(raw ?? "").replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("91")) digits = digits.slice(2);
+  if (digits.length === 11 && digits.startsWith("0")) digits = digits.slice(1);
+  return /^[6-9]\d{9}$/.test(digits) ? digits : null;
+}
+
+router.patch("/shop", shopGate, ...shopEditLimits, async (req, res) => {
+  const body = req.body || {};
+  const patch = {};
+
+  if (body.upi_id !== undefined) {
+    const upi = String(body.upi_id ?? "").trim();
+    if (upi && !UPI_ID.test(upi)) {
+      return res.status(400).json({ error: "UPI id sahi nahi hai (jaise name@bank)", code: "bad_upi" });
+    }
+    patch.upi_id = upi || null;
+  }
+  if (body.owner_phone !== undefined) {
+    const raw = String(body.owner_phone ?? "").trim();
+    if (raw) {
+      const phone = cleanPhone(raw);
+      if (!phone) return res.status(400).json({ error: "Phone number sahi nahi hai (10 digit)", code: "bad_phone" });
+      patch.owner_phone = phone;
+    } else {
+      patch.owner_phone = null;
+    }
+  }
+  if (!Object.keys(patch).length) {
+    return res.status(400).json({ error: "upi_id ya owner_phone bhejein", code: "nothing_to_update" });
+  }
+
+  try {
+    const updated = await db.updateShop(req.shop.shop_id, patch);
+    if (!updated) return res.status(404).json({ error: "Shop not found" });
+    console.log(`[SHOP] ${req.shop.shop_id} updated: ${Object.keys(patch).join(", ")}`);
+    res.json({ shop: publicShop(updated) });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
 });
 
 /**

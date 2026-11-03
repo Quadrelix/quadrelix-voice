@@ -3,12 +3,13 @@
 #   cd backend\scripts
 #   powershell -ExecutionPolicy Bypass -File .\create-shops.ps1
 #
-# It asks for the ADMIN_TOKEN (typed hidden, never echoed or saved) and for each
-# shop's UPI id and owner phone. The bill footer text is printed under the QR on
-# every bill of that shop (emoji are dropped by the server on purpose).
-# Run it AFTER the backend with the bill_footer column is deployed; before that the
-# footer would be ignored. Change a footer later with:
-#   PATCH /api/admin/shops/<shop_id>   body: {"bill_footer": "..."}
+# It asks for ONE thing: the ADMIN_TOKEN (typed hidden, never echoed or saved). It
+# does not ask for UPI ids or phone numbers: the shop owner logs in with the code
+# and enters their own payment details in the app (Home -> shop name -> Shop details).
+# Until they do, bills simply have no pay QR.
+# The bill footer text is printed under every bill of that shop (emoji are dropped by
+# the server on purpose). Run this AFTER the backend with the bill_footer column is live.
+# Change a footer later with:  PATCH /api/admin/shops/<shop_id>  {"bill_footer": "..."}
 
 param([string]$BaseUrl = "https://quadrelix-voice-backend.onrender.com")
 
@@ -69,20 +70,16 @@ Aapki Apni Dukaan!
 )
 
 foreach ($s in $shops) {
-  Write-Host ""
-  $upi = $s.upi
-  $phone = $s.phone
-  if (-not $upi) { $upi = Read-Host "UPI id for $($s.name) (e.g. name@bank)" }
-  if (-not $phone) { $phone = Read-Host "Owner phone for $($s.name) (10 digits)" }
-  $body = @{
-    shop_name = $s.name; shop_type = $s.type
-    upi_id = $upi; owner_phone = $phone; bill_footer = $s.footer
-  } | ConvertTo-Json
+  $body = @{ shop_name = $s.name; shop_type = $s.type; bill_footer = $s.footer }
+  # only the team TEST shop has fixed fake payment details
+  if ($s.upi) { $body.upi_id = $s.upi }
+  if ($s.phone) { $body.owner_phone = $s.phone }
+  $json = $body | ConvertTo-Json
   try {
     $r = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/admin/shops" `
       -Headers @{ Authorization = "Bearer $token" } `
       -ContentType "application/json; charset=utf-8" `
-      -Body ([Text.Encoding]::UTF8.GetBytes($body))
+      -Body ([Text.Encoding]::UTF8.GetBytes($json))
     Write-Host ("{0}  ->  CODE {1}   (shop_id {2})" -f $r.shop.shop_name, $r.shop.shop_code, $r.shop.shop_id) -ForegroundColor Green
   } catch {
     Write-Host "Could not create $($s.name): $($_.Exception.Message)" -ForegroundColor Red
@@ -90,3 +87,4 @@ foreach ($s in $shops) {
 }
 Write-Host ""
 Write-Host "Give each owner ONLY their own code. Do not paste the codes anywhere public."
+Write-Host "Owners add their own UPI id and phone in the app after logging in with their code."

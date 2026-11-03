@@ -29,6 +29,8 @@ export default {
     'home.switchNo': 'No',
     'home.switchYes': 'Yes, change',
     'home.defaultShop': 'My Shop',
+    'home.payMissingTitle': 'Add your UPI id',
+    'home.payMissingSub': 'Bills show a pay QR only after this',
   },
   hi: {
     'home.heroTitle': 'बोलकर बिल बनाइए',
@@ -59,5 +61,7 @@ export default {
     'home.switchNo': 'नहीं',
     'home.switchYes': 'हाँ, बदलें',
     'home.defaultShop': 'मेरी दुकान',
+    'home.payMissingTitle': 'अपनी UPI id जोड़ें',
+    'home.payMissingSub': 'इसके बाद ही बिल पर पेमेंट QR आएगा',
   },
 };

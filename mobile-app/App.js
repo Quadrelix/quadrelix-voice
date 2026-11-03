@@ -28,6 +28,7 @@ import ConfirmContactScreen from './screens/ConfirmContactScreen';
 import BillPreviewScreen from './screens/BillPreviewScreen';
 import VoiceEnrollScreen from './screens/VoiceEnrollScreen';
 import CalibrateScreen from './screens/CalibrateScreen';
+import ShopDetailsScreen from './screens/ShopDetailsScreen';
 import ShopSelectScreen from './screens/ShopSelectScreen';
 import { ShopProvider, useShop } from './services/ShopContext';
 import { I18nProvider, useI18n } from './services/i18n';
@@ -145,6 +146,7 @@ function ShopGate() {
         <Stack.Screen name="BillPreview" component={BillPreviewScreen} />
         <Stack.Screen name="VoiceEnroll" component={VoiceEnrollScreen} />
         <Stack.Screen name="Calibrate" component={CalibrateScreen} />
+        <Stack.Screen name="ShopDetails" component={ShopDetailsScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

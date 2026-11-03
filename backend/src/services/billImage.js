@@ -114,22 +114,24 @@ function footerLayout(text) {
 
 async function generateBillImage({ transaction, shop }) {
   const footer = footerLayout(shop.bill_footer);
+  // A shop that has not entered its UPI id yet must not print a QR (it would pay "null"),
+  // and one without a phone has no contact line.
+  const hasUpi = Boolean(String(shop.upi_id || "").trim());
+  const hasPhone = Boolean(String(shop.owner_phone || "").trim());
   const footerHeight = footer.length
     ? 20 + footer.reduce((h, l) => h + (l.blank ? FOOTER_BLANK : FOOTER_LINE), 0) + 6
     : 0;
   const height =
     MARGIN + // top
     44 + // shop name
-    26 + // contact line
+    (hasPhone ? 26 : 4) + // contact line
     28 + // divider gap
     28 + // table header
     18 + // header rule
     transaction.items.length * ROW_HEIGHT +
     26 + // rule above total
     52 + // total line
-    30 + // divider before QR
-    QR_SIZE +
-    46 + // "scan to pay" caption
+    (hasUpi ? 30 + QR_SIZE + 46 : 0) + // divider, UPI QR and its "scan to pay" caption
     footerHeight +
     MARGIN; // bottom
 
@@ -148,11 +150,15 @@ async function generateBillImage({ transaction, shop }) {
   ctx.fillText(shop.shop_name, MARGIN, y);
   y += 30;
 
-  ctx.font = font(14);
-  ctx.fillStyle = "#555555";
-  ctx.fillText(`Contact: ${shop.owner_phone}`, MARGIN, y);
-  ctx.fillStyle = "#000000";
-  y += 28;
+  if (hasPhone) {
+    ctx.font = font(14);
+    ctx.fillStyle = "#555555";
+    ctx.fillText(`Contact: ${shop.owner_phone}`, MARGIN, y);
+    ctx.fillStyle = "#000000";
+    y += 28;
+  } else {
+    y += 6;
+  }
 
   drawRule(ctx, y);
   y += 28;
@@ -189,23 +195,25 @@ async function generateBillImage({ transaction, shop }) {
   drawRight(ctx, money(transaction.total_amount), TOTAL_RIGHT, y);
   y += 30;
 
-  drawRule(ctx, y);
-  y += 30;
+  if (hasUpi) {
+    drawRule(ctx, y);
+    y += 30;
 
-  // UPI QR — scanning it pre-fills payee and amount in any UPI app.
-  // Generated at the exact size it's drawn at, so no rescaling blurs it.
-  const qrBuffer = await generateUpiQrBuffer({
-    upiId: shop.upi_id,
-    payeeName: shop.shop_name,
-    amount: transaction.total_amount,
-    size: QR_SIZE,
-  });
-  const qrImage = await loadImage(qrBuffer);
-  ctx.drawImage(qrImage, (WIDTH - QR_SIZE) / 2, y, QR_SIZE, QR_SIZE);
-  y += QR_SIZE + 30;
+    // UPI QR — scanning it pre-fills payee and amount in any UPI app.
+    // Generated at the exact size it's drawn at, so no rescaling blurs it.
+    const qrBuffer = await generateUpiQrBuffer({
+      upiId: shop.upi_id,
+      payeeName: shop.shop_name,
+      amount: transaction.total_amount,
+      size: QR_SIZE,
+    });
+    const qrImage = await loadImage(qrBuffer);
+    ctx.drawImage(qrImage, (WIDTH - QR_SIZE) / 2, y, QR_SIZE, QR_SIZE);
+    y += QR_SIZE + 30;
 
-  ctx.font = font(16, "bold");
-  drawCentered(ctx, `Scan to pay ${money(transaction.total_amount)}`, y);
+    ctx.font = font(16, "bold");
+    drawCentered(ctx, `Scan to pay ${money(transaction.total_amount)}`, y);
+  }
 
   if (footer.length) {
     y += 22;
