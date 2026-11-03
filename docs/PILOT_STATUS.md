@@ -24,7 +24,16 @@ Postgres CI. Detail: `docs/LAUNCH_REVIEW_2026-11-01.md`.
 
 ## Voice Lock ka track (docs/SPEAKER_VERIFICATION_ROADMAP.md)
 - M1-M5: ho chuke (service, Node routes, app enrollment screen, shadow-mode gate).
-- **M2 baaki:** `voice-service/clips/` ke folders khaali hain. Asli recordings (owner 5 enroll + 15 test, dusre 10+, TV 5, overlap 5)
+- **Calibration mode (naya):** app ka chhupa "आवाज़ टेस्ट" screen (Home ka logo 5 baar tap) + `/api/calibrate-voice` + `voice-service/analyze_log.py`.
+  Label ke saath score jama hota hai (audio nahi), aur script threshold table banati hai. Poora tareeka: `docs/VOICE_CALIBRATION.md`.
+  Isse M2 ke `clips/` folders wala tareeka ab zaroori nahi.
+- **Owner khud apni payment details bharta hai (naya):** founder sirf shop ka naam aur code banata hai
+  (`backend/scripts/create-shops.ps1`, sirf ADMIN_TOKEN maangti hai). Owner code se login karke Home -> shop ke naam par tap ->
+  "दुकान की जानकारी" me apni UPI id aur phone daalta hai (`PATCH /api/shop`). UPI na ho to bill par QR nahi chhapta,
+  aur Home par yaad dilane wala card aata hai. UPI badalne par confirm poochha jaata hai; shop code abhi bhi akela password hai,
+  isliye usse password ki tarah rakhein.
+- **Bill footer (naya):** har shop ka apna thank-you text bill ke neeche (`shops.bill_footer`, `backend/scripts/create-shops.ps1`).
+- ~~**M2 baaki:**~~ (calibration mode se kiya jaayega) `voice-service/clips/` ke folders khaali hain. Asli recordings (owner 5 enroll + 15 test, dusre 10+, TV 5, overlap 5)
   karke `python evaluate.py` chalana hai aur table README me likhna hai. Ye go/no-go gate hai.
 - **Hosting baaki:** Oracle Always Free VM (`voice-service/deploy/`, card chahiye). Hugging Face Docker Spaces ab paid hain,
   to free nahi. `VOICE_DATABASE_URL` (Neon, `voice-service/pgstore.py`) un hosts ke liye hai jinka disk restart par saaf hota hai. Dono ka step-by-step: `docs/VOICE_SERVICE_DEPLOY.md`. Docker image abhi local me pura build

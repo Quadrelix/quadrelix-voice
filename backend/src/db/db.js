@@ -105,6 +105,7 @@ function shapeShop(row) {
     shop_type: row.shop_type,
     upi_id: row.upi_id,
     owner_phone: row.owner_phone,
+    bill_footer: row.bill_footer ?? null,
     active: row.active,
   };
 }
@@ -378,16 +379,16 @@ const pgImpl = {
     return rows.map(shapeShop);
   },
 
-  async createShop({ shop_name, shop_type, upi_id, owner_phone }) {
+  async createShop({ shop_name, shop_type, upi_id, owner_phone, bill_footer }) {
     for (let attempt = 0; attempt < 10; attempt++) {
       const shop_code = generateShopCode();
       try {
         const rows = await query(
-          `INSERT INTO shops (shop_id, shop_code, shop_name, shop_type, upi_id, owner_phone)
-           VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+          `INSERT INTO shops (shop_id, shop_code, shop_name, shop_type, upi_id, owner_phone, bill_footer)
+           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
           [
             `shop_${shop_code.toLowerCase()}`, shop_code, shop_name,
-            shop_type || null, upi_id || null, owner_phone || null,
+            shop_type || null, upi_id || null, owner_phone || null, bill_footer || null,
           ]
         );
         return shapeShop(rows[0]);
@@ -400,7 +401,7 @@ const pgImpl = {
   },
 
   async updateShop(shop_id, patch) {
-    const allowed = ["shop_name", "shop_type", "upi_id", "owner_phone", "active"];
+    const allowed = ["shop_name", "shop_type", "upi_id", "owner_phone", "bill_footer", "active"];
     const sets = [];
     const params = [shop_id];
     for (const key of allowed) {
@@ -662,7 +663,7 @@ const lowdbImpl = (() => {
       return db.data.shops || [];
     },
 
-    async createShop({ shop_name, shop_type, upi_id, owner_phone }) {
+    async createShop({ shop_name, shop_type, upi_id, owner_phone, bill_footer }) {
       const db = backend();
       await db.read();
       const shop_code = generateShopCode();
@@ -673,6 +674,7 @@ const lowdbImpl = (() => {
         shop_type: shop_type || null,
         upi_id: upi_id || null,
         owner_phone: owner_phone || null,
+        bill_footer: bill_footer || null,
         active: true,
       };
       db.data.shops.push(shop);
@@ -685,7 +687,7 @@ const lowdbImpl = (() => {
       await db.read();
       const shop = db.data.shops.find((s) => s.shop_id === shop_id);
       if (!shop) return undefined;
-      for (const key of ["shop_name", "shop_type", "upi_id", "owner_phone", "active"]) {
+      for (const key of ["shop_name", "shop_type", "upi_id", "owner_phone", "bill_footer", "active"]) {
         if (patch[key] !== undefined) shop[key] = patch[key];
       }
       await save();

@@ -9,10 +9,9 @@
 // It refreshes on focus, so returning from a voice sale updates the summary
 // immediately.
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   RefreshControl,
   ScrollView,
@@ -31,7 +30,6 @@ import {
   recentTransactions,
   getVoiceStatus,
 } from '../services/api';
-import { useShop } from '../services/ShopContext';
 import { useI18n } from '../services/i18n';
 import LanguageToggle from '../components/LanguageToggle';
 import { colors, shadow, shadowStrong, money } from '../theme';
@@ -39,7 +37,6 @@ import { colors, shadow, shadowStrong, money } from '../theme';
 export default function HomeScreen() {
   const navigation = useNavigation();
   const { t, lang } = useI18n();
-  const { switchShop: switchShopState } = useShop();
   const [shop, setShop] = useState(null);
   const [report, setReport] = useState(null);
   const [recent, setRecent] = useState([]);
@@ -88,18 +85,20 @@ export default function HomeScreen() {
 
   const shopName = shop?.shop_name || t('home.defaultShop');
 
-  // Switching shops clears the shared shop state; App.js sees shop = null and
-  // swaps the whole navigation tree for the code screen. This has to go
-  // through context — Updates.reloadAsync() does not exist in Expo Go, which
-  // is why the old version cleared the code but stayed on the old shop.
-  const switchShop = () => {
-    Alert.alert(t('home.switchTitle'), t('home.switchBody', { shop: shopName }), [
-      { text: t('home.switchNo'), style: 'cancel' },
-      { text: t('home.switchYes'), style: 'destructive', onPress: () => switchShopState() },
-    ]);
-  };
 
   const goSale = () => navigation.navigate('HandsFree');
+
+  const logoTaps = useRef({ n: 0, last: 0 });
+  const onLogoTap = () => {
+    const now = Date.now();
+    const taps = logoTaps.current;
+    taps.n = now - taps.last < 1500 ? taps.n + 1 : 1; // taps must come quickly one after another
+    taps.last = now;
+    if (taps.n >= 5) {
+      taps.n = 0;
+      navigation.navigate('Calibrate');
+    }
+  };
 
   const lowStockCount = report?.low_stock?.length || 0;
   const initials = shopName
@@ -114,7 +113,10 @@ export default function HomeScreen() {
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <View style={s.header}>
         <View style={s.brandRow}>
-          <Image source={require('../assets/brand/logo.png')} style={s.logo} />
+          {/* Five quick taps on the logo open the team's voice test (hidden from shopkeepers). */}
+          <TouchableOpacity activeOpacity={1} onPress={onLogoTap}>
+            <Image source={require('../assets/brand/logo.png')} style={s.logo} />
+          </TouchableOpacity>
           <Text style={s.brand}>
             BizMate <Text style={s.brandAi}>AI</Text>
           </Text>
@@ -122,7 +124,7 @@ export default function HomeScreen() {
 
         <View style={s.headerRight}>
           <LanguageToggle />
-          <TouchableOpacity style={s.shopChip} onPress={switchShop} activeOpacity={0.8}>
+          <TouchableOpacity style={s.shopChip} onPress={() => navigation.navigate('ShopDetails')} activeOpacity={0.8}>
             <View style={s.shopAvatar}>
               <Text style={s.shopAvatarText}>{initials || 'S'}</Text>
             </View>
@@ -167,6 +169,24 @@ export default function HomeScreen() {
           <Text style={s.micLabel}>{t('home.micLabel')}</Text>
           <Text style={s.example}>{t('home.example')}</Text>
         </LinearGradient>
+
+        {/* ── No UPI id yet: bills have no pay QR until the owner adds one ── */}
+        {!!shop && !shop.upi_id && (
+          <TouchableOpacity
+            style={s.payCard}
+            onPress={() => navigation.navigate('ShopDetails')}
+            activeOpacity={0.85}
+          >
+            <View style={[s.voiceIcon, { backgroundColor: colors.orangeSoft }]}>
+              <Ionicons name="qr-code-outline" size={22} color={colors.orange} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.voiceTitle}>{t('home.payMissingTitle')}</Text>
+              <Text style={s.voiceSub} numberOfLines={2}>{t('home.payMissingSub')}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.faint} />
+          </TouchableOpacity>
+        )}
 
         {/* ── Voice Lock ───────────────────────────────────────────────── */}
         {/* Only shown when the lock is in use or still needs setup. In the
@@ -373,6 +393,10 @@ const s = StyleSheet.create({
   viewMore: { flexDirection: 'row', alignItems: 'center' },
   viewMoreText: { color: colors.primary, fontSize: 13, fontWeight: '700', marginRight: 3 },
 
+  payCard: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card,
+    borderRadius: 16, padding: 13, marginTop: 14, borderWidth: 1.5, borderColor: colors.orangeSoft, ...shadow,
+  },
   voiceCard: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card,
     borderRadius: 16, padding: 13, marginTop: 14, ...shadow,

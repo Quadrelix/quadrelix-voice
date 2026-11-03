@@ -142,10 +142,12 @@ function decide({ mode: rawMode, result, error, failMode: rawFailMode } = {}) {
  * Throws when the service itself is unreachable / misbehaving — decide() turns
  * that into the fail mode.
  */
-async function verifySpeaker(audioPath, shopId) {
+async function verifySpeaker(audioPath, shopId, { label } = {}) {
   const form = new FormData();
   form.append("audio", fs.createReadStream(audioPath));
   form.append("speaker_id", speakerIdFor(shopId));
+  // Calibration only: the service writes the label next to the score in its log.
+  if (label) form.append("label", label);
 
   const res = await axios.post(`${SERVICE_URL()}/verify`, form, {
     headers: headers(form.getHeaders()),

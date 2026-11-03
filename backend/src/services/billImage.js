@@ -64,24 +64,75 @@ const PRODUCT_MAX_WIDTH = QTY_RIGHT - 110 - MARGIN;
 
 const font = (size, weight = "normal") => `${weight} ${size}px "${FAMILY}"`;
 
+const FOOTER_LINE = 26; // pitch between footer lines
+const FOOTER_BLANK = 12; // a blank line in the footer text is only a small gap
+
 // Devanagari writes one "character" as several code points (consonant + nukta +
 // vowel sign), so any trimming has to work in graphemes, not code units.
 const segmenter = new Intl.Segmenter("hi", { granularity: "grapheme" });
 
+// The shop's optional footer (thank-you note, tagline), wrapped to the bill
+// width. Emoji are dropped on purpose: the bundled Noto Sans has no emoji glyphs
+// and the server has no emoji font, so they would print as empty boxes.
+function footerLayout(text) {
+  const clean = String(text || "")
+    .replace(/\p{Extended_Pictographic}|[\uFE0E\uFE0F\u200D]/gu, "")
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((l) => l.replace(/[ \t]+/g, " ").trim());
+  while (clean.length && clean[0] === "") clean.shift();
+  while (clean.length && clean[clean.length - 1] === "") clean.pop();
+  if (!clean.length) return [];
+
+  const probe = createCanvas(1, 1).getContext("2d");
+  const maxWidth = WIDTH - 2 * MARGIN;
+  const lines = [];
+  let firstContent = true;
+  for (const raw of clean) {
+    if (raw === "") {
+      // collapse runs of blank lines into one gap
+      if (lines.length && lines[lines.length - 1].blank !== true) lines.push({ blank: true });
+      continue;
+    }
+    const bold = firstContent; // the first line is the shop's heading
+    firstContent = false;
+    probe.font = bold ? font(20, "bold") : font(16);
+    let current = "";
+    for (const word of raw.split(" ")) {
+      const trial = current ? `${current} ${word}` : word;
+      if (current && probe.measureText(trial).width > maxWidth) {
+        lines.push({ text: current, bold });
+        current = word;
+      } else {
+        current = trial;
+      }
+    }
+    if (current) lines.push({ text: current, bold });
+  }
+  return lines;
+}
+
 async function generateBillImage({ transaction, shop }) {
+  const footer = footerLayout(shop.bill_footer);
+  // A shop that has not entered its UPI id yet must not print a QR (it would pay "null"),
+  // and one without a phone has no contact line.
+  const hasUpi = Boolean(String(shop.upi_id || "").trim());
+  const hasPhone = Boolean(String(shop.owner_phone || "").trim());
+  const footerHeight = footer.length
+    ? 20 + footer.reduce((h, l) => h + (l.blank ? FOOTER_BLANK : FOOTER_LINE), 0) + 6
+    : 0;
   const height =
     MARGIN + // top
     44 + // shop name
-    26 + // contact line
+    (hasPhone ? 26 : 4) + // contact line
     28 + // divider gap
     28 + // table header
     18 + // header rule
     transaction.items.length * ROW_HEIGHT +
     26 + // rule above total
     52 + // total line
-    30 + // divider before QR
-    QR_SIZE +
-    46 + // "scan to pay" caption
+    (hasUpi ? 30 + QR_SIZE + 46 : 0) + // divider, UPI QR and its "scan to pay" caption
+    footerHeight +
     MARGIN; // bottom
 
   const canvas = createCanvas(WIDTH, height);
@@ -99,11 +150,15 @@ async function generateBillImage({ transaction, shop }) {
   ctx.fillText(shop.shop_name, MARGIN, y);
   y += 30;
 
-  ctx.font = font(14);
-  ctx.fillStyle = "#555555";
-  ctx.fillText(`Contact: ${shop.owner_phone}`, MARGIN, y);
-  ctx.fillStyle = "#000000";
-  y += 28;
+  if (hasPhone) {
+    ctx.font = font(14);
+    ctx.fillStyle = "#555555";
+    ctx.fillText(`Contact: ${shop.owner_phone}`, MARGIN, y);
+    ctx.fillStyle = "#000000";
+    y += 28;
+  } else {
+    y += 6;
+  }
 
   drawRule(ctx, y);
   y += 28;
@@ -140,23 +195,43 @@ async function generateBillImage({ transaction, shop }) {
   drawRight(ctx, money(transaction.total_amount), TOTAL_RIGHT, y);
   y += 30;
 
-  drawRule(ctx, y);
-  y += 30;
+  if (hasUpi) {
+    drawRule(ctx, y);
+    y += 30;
 
-  // UPI QR — scanning it pre-fills payee and amount in any UPI app.
-  // Generated at the exact size it's drawn at, so no rescaling blurs it.
-  const qrBuffer = await generateUpiQrBuffer({
-    upiId: shop.upi_id,
-    payeeName: shop.shop_name,
-    amount: transaction.total_amount,
-    size: QR_SIZE,
-  });
-  const qrImage = await loadImage(qrBuffer);
-  ctx.drawImage(qrImage, (WIDTH - QR_SIZE) / 2, y, QR_SIZE, QR_SIZE);
-  y += QR_SIZE + 30;
+    // UPI QR — scanning it pre-fills payee and amount in any UPI app.
+    // Generated at the exact size it's drawn at, so no rescaling blurs it.
+    const qrBuffer = await generateUpiQrBuffer({
+      upiId: shop.upi_id,
+      payeeName: shop.shop_name,
+      amount: transaction.total_amount,
+      size: QR_SIZE,
+    });
+    const qrImage = await loadImage(qrBuffer);
+    ctx.drawImage(qrImage, (WIDTH - QR_SIZE) / 2, y, QR_SIZE, QR_SIZE);
+    y += QR_SIZE + 30;
 
-  ctx.font = font(16, "bold");
-  drawCentered(ctx, `Scan to pay ${money(transaction.total_amount)}`, y);
+    ctx.font = font(16, "bold");
+    drawCentered(ctx, `Scan to pay ${money(transaction.total_amount)}`, y);
+  }
+
+  if (footer.length) {
+    y += 22;
+    drawRule(ctx, y);
+    y += 22;
+    ctx.fillStyle = "#222222";
+    for (const line of footer) {
+      if (line.blank) {
+        y += FOOTER_BLANK;
+        continue;
+      }
+      ctx.font = line.bold ? font(20, "bold") : font(16);
+      y += FOOTER_LINE - 6;
+      drawCentered(ctx, line.text, y);
+      y += 6;
+    }
+    ctx.fillStyle = "#000000";
+  }
 
   const filename = `bill_${transaction.transaction_id}.png`;
   const filepath = path.join(OUTPUT_DIR, filename);

@@ -8,8 +8,10 @@ import products from './strings/products';
 import customers from './strings/customers';
 import reports from './strings/reports';
 import voiceEnroll from './strings/voiceEnroll';
+import calibrate from './strings/calibrate';
+import shopDetails from './strings/shopDetails';
 
-const parts = [common, home, handsfree, shop, products, customers, reports, voiceEnroll];
+const parts = [common, home, handsfree, shop, products, customers, reports, voiceEnroll, calibrate, shopDetails];
 
 const dictionary = { en: {}, hi: {} };
 for (const p of parts) {
