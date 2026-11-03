@@ -29,6 +29,7 @@ import BillPreviewScreen from './screens/BillPreviewScreen';
 import VoiceEnrollScreen from './screens/VoiceEnrollScreen';
 import ShopSelectScreen from './screens/ShopSelectScreen';
 import { ShopProvider, useShop } from './services/ShopContext';
+import { I18nProvider, useI18n } from './services/i18n';
 import { warmUpServer } from './services/api';
 import { colors, shadow } from './theme';
 
@@ -42,8 +43,16 @@ const TAB_ICONS = {
   Reports: { on: 'bar-chart', off: 'bar-chart-outline' },
 };
 
+const TAB_LABEL_KEYS = {
+  Home: 'tab.home',
+  Products: 'tab.products',
+  Customers: 'tab.customers',
+  Reports: 'tab.reports',
+};
+
 function TabBar({ state, navigation }) {
   const insets = useSafeAreaInsets();
+  const { t } = useI18n();
   return (
     <View style={[s.bar, { paddingBottom: Math.max(insets.bottom, 6) }]}>
       {state.routes.map((route, index) => {
@@ -66,7 +75,7 @@ function TabBar({ state, navigation }) {
         }
 
         const icon = TAB_ICONS[route.name] || { on: 'ellipse', off: 'ellipse-outline' };
-        const label = route.name === 'Reports' ? 'More' : route.name;
+        const label = t(TAB_LABEL_KEYS[route.name] || 'tab.home');
         return (
           <TouchableOpacity
             key={route.key}
@@ -105,10 +114,12 @@ function Tabs() {
 
 function ShopGate() {
   const { shop, ready, chooseShop } = useShop();
+  const { ready: langReady } = useI18n();
 
   // Reading AsyncStorage takes a few milliseconds; showing the chooser first
-  // would make an enrolled phone flash the code screen on every launch.
-  if (!ready) {
+  // would make an enrolled phone flash the code screen on every launch (and the
+  // saved language must be known before any text is drawn).
+  if (!ready || !langReady) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg }}>
         <ActivityIndicator color={colors.primary} />
@@ -141,9 +152,11 @@ export default function App() {
   React.useEffect(() => { warmUpServer(); }, []);
   return (
     <SafeAreaProvider>
-      <ShopProvider>
-        <ShopGate />
-      </ShopProvider>
+      <I18nProvider>
+        <ShopProvider>
+          <ShopGate />
+        </ShopProvider>
+      </I18nProvider>
     </SafeAreaProvider>
   );
 }
@@ -154,7 +167,7 @@ const s = StyleSheet.create({
     paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.line,
   },
   tab: { flex: 1, alignItems: 'center', paddingVertical: 4 },
-  tabLabel: { fontSize: 10, color: colors.faint, marginTop: 3, fontWeight: '600' },
+  tabLabel: { fontSize: 11, color: colors.faint, marginTop: 3, fontWeight: '600' },
   tabLabelOn: { color: colors.primary, fontWeight: '700' },
   micSlot: { flex: 1, alignItems: 'center' },
   mic: {

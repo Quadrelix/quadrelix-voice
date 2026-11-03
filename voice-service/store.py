@@ -45,6 +45,8 @@ from pathlib import Path
 
 import numpy as np
 
+import pgstore
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -63,7 +65,10 @@ _lock = threading.Lock()
 # ---------------------------------------------------------------------------
 
 def _load_store() -> dict:
-    """Read the full JSON store from disk. Returns empty dict if file absent."""
+    """Read the full store (Postgres when VOICE_DATABASE_URL is set, else the JSON file).
+    Returns an empty dict if nothing is stored yet."""
+    if pgstore.enabled():
+        return pgstore.load_store()
     if STORE_PATH.exists():
         with open(STORE_PATH, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -78,6 +83,9 @@ def _write_store(data: dict) -> None:
     volume, so a reader either sees the old file or the new one — never half
     of each.
     """
+    if pgstore.enabled():
+        pgstore.write_store(data)
+        return
     STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(dir=str(STORE_PATH.parent), suffix=".json.tmp")
     try:

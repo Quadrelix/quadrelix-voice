@@ -26,8 +26,9 @@ Postgres CI. Detail: `docs/LAUNCH_REVIEW_2026-11-01.md`.
 - M1-M5: ho chuke (service, Node routes, app enrollment screen, shadow-mode gate).
 - **M2 baaki:** `voice-service/clips/` ke folders khaali hain. Asli recordings (owner 5 enroll + 15 test, dusre 10+, TV 5, overlap 5)
   karke `python evaluate.py` chalana hai aur table README me likhna hai. Ye go/no-go gate hai.
-- **Hosting baaki:** Oracle Always Free VM par Docker (`voice-service/Dockerfile`, `voice-service/deploy/`). Docker image abhi
-  local me pura build nahi hua (net timeout), VM par pehli build me check hoga.
+- **Hosting baaki:** Oracle Always Free VM (`voice-service/deploy/`, card chahiye). Hugging Face Docker Spaces ab paid hain,
+  to free nahi. `VOICE_DATABASE_URL` (Neon, `voice-service/pgstore.py`) un hosts ke liye hai jinka disk restart par saaf hota hai. Dono ka step-by-step: `docs/VOICE_SERVICE_DEPLOY.md`. Docker image abhi local me pura build
+  nahi hua (net timeout), pehli cloud build me check hoga. M7 (enforce) se pehle always-on host chahiye.
 - **M6:** voice-service hosted + `VOICE_LOCK_MODE=shadow` + har shop owner ki awaaz registered -> 5-7 din ka score log.
   Labels ke liye scripted sessions (ghar waale/customer/TV alag bolein) chahiye, warna sirf owner ki awaaz aayegi.
 - **M7:** threshold tay hone ke baad `enforce`. Ye tabhi jab har shop ki awaaz registered ho, warna uska mic reject hoga.
