@@ -297,6 +297,16 @@ export default function HandsFreeScreen() {
   // chat with the bill attached. Returns true if it was opened, false to let the
   // caller fall back to the generic share sheet. Never throws.
   async function shareToCustomerChat(fileUri, rawPhone) {
+    // react-native-share is a native module: it does not exist in Expo Go (only in the
+    // built APK), so anything wrong here just means "use the plain share sheet".
+    try {
+      return await openWhatsAppChat(fileUri, rawPhone);
+    } catch {
+      return false;
+    }
+  }
+
+  async function openWhatsAppChat(fileUri, rawPhone) {
     const digits = String(rawPhone || '').replace(/\D/g, '');
     // Indian numbers: 10 digits, or already with 91 / a leading 0.
     let number = null;
