@@ -7,11 +7,13 @@ import { getActiveShop } from "./shop";
 // - Deployed backend (Render/Railway/etc.)                -> "https://your-backend-url.com"
 //
 // Exported because screens need it to build image URLs — keep it defined here
-// only, so there's one place to change when your laptop's IP moves.
-// The pilot backend runs on Render, so the phone no longer depends on the
-// laptop, its Wi-Fi IP, or ngrok. To point the app back at a laptop during
-// development, change this one line (e.g. "http://192.168.1.5:3000").
-export const BASE_URL = "https://quadrelix-voice-backend.onrender.com";
+// only. The pilot backend runs on Render, so the phone does not depend on a laptop.
+// Developers can point the app at their own laptop WITHOUT editing this file: set
+// EXPO_PUBLIC_API_URL (see mobile-app/.env.example and docs/TEAM_WORKFLOW.md). Production
+// builds and OTA updates never have it set, so they always use the Render URL.
+export const BASE_URL =
+  (process.env.EXPO_PUBLIC_API_URL || "").trim().replace(/\/+$/, "") ||
+  "https://quadrelix-voice-backend.onrender.com";
 
 // A default deadline on every call: without one a stalled connection leaves the
 // shopkeeper staring at a spinner forever. Generous on purpose — Render's free
