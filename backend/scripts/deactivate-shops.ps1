@@ -11,12 +11,29 @@
 #
 # Asks for ADMIN_TOKEN (typed hidden), or reads $env:ADMIN_TOKEN if you set it for this window.
 
+# Which shops: by default the OLD demo/test shops, matched by exact NAME. Owners can rename their
+# shop in the app, so for anything else pick by id or code, which never change by renaming:
+#   .\deactivate-shops.ps1 -ShopIds shop_psvybc,shop_sbxlrz     (ids are shown in the admin list)
+#   .\deactivate-shops.ps1 -Codes PSVYBC,SBXLRZ                  (the shop codes)
+#   .\deactivate-shops.ps1 -Names "Some Shop"                    (exact name, case-insensitive)
+# Give -ShopIds / -Codes / -Names and ONLY those are used; the default name list is ignored.
+
 param(
   [string]$BaseUrl = "https://quadrelix-voice-backend.onrender.com",
-  # Exact shop names to switch off (case-insensitive). Override with -Names "A","B".
-  [string[]]$Names = @("Sharma Kapda Store", "Gupta Kirana Store", "TEST Shop (delete me)", "Demo (legacy data)"),
+  # Exact shop names to switch off (case-insensitive). Default: the old demo/test shops.
+  [string[]]$Names = @(),
+  [string[]]$ShopIds = @(),
+  [string[]]$Codes = @(),
   [switch]$Yes   # skip the YES question (for scripts/tests)
 )
+
+# `powershell -File x.ps1 -ShopIds a,b` hands the script ONE string "a,b" (it only becomes an array
+# when typed inside an open PowerShell). Ids and codes never contain commas, so split them here.
+$ShopIds = @($ShopIds | ForEach-Object { $_ -split "," } | Where-Object { $_.Trim() })
+$Codes = @($Codes | ForEach-Object { $_ -split "," } | Where-Object { $_.Trim() })
+
+$defaultNames = @("Sharma Kapda Store", "Gupta Kirana Store", "TEST Shop (delete me)", "Demo (legacy data)")
+if ($Names.Count -eq 0 -and $ShopIds.Count -eq 0 -and $Codes.Count -eq 0) { $Names = $defaultNames }
 
 $token = $env:ADMIN_TOKEN
 if (-not $token) {
@@ -40,11 +57,30 @@ Write-Host ""
 Write-Host "Shops on the server right now:"
 $shops | Select-Object shop_name, shop_code, active | Format-Table -AutoSize
 
-$wanted = $Names | ForEach-Object { $_.Trim().ToLower() }
-$targets = @($shops | Where-Object { $wanted -contains $_.shop_name.Trim().ToLower() -and $_.active -ne $false })
+$wantedNames = @($Names | ForEach-Object { $_.Trim().ToLower() })
+$wantedIds = @($ShopIds | ForEach-Object { $_.Trim().ToLower() })
+$wantedCodes = @($Codes | ForEach-Object { $_.Trim().ToLower() })
+$targets = @($shops | Where-Object {
+  $_.active -ne $false -and (
+    ($wantedNames -contains $_.shop_name.Trim().ToLower()) -or
+    ($wantedIds -contains $_.shop_id.Trim().ToLower()) -or
+    ($wantedCodes -contains $_.shop_code.Trim().ToLower()))
+})
+
+# Anything asked for by id/code that matched no shop is almost certainly a typo: say so.
+foreach ($id in $wantedIds) {
+  if (-not ($shops | Where-Object { $_.shop_id.Trim().ToLower() -eq $id })) {
+    Write-Host "No shop with id '$id' on the server." -ForegroundColor Red
+  }
+}
+foreach ($c in $wantedCodes) {
+  if (-not ($shops | Where-Object { $_.shop_code.Trim().ToLower() -eq $c })) {
+    Write-Host "No shop with code '$c' on the server." -ForegroundColor Red
+  }
+}
 
 if ($targets.Count -eq 0) {
-  Write-Host "Nothing to switch off: none of the listed shops are active." -ForegroundColor Yellow
+  Write-Host "Nothing to switch off: none of the chosen shops are active." -ForegroundColor Yellow
   exit 0
 }
 

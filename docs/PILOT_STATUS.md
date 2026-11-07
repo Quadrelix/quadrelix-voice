@@ -44,6 +44,9 @@ Postgres CI. Detail: `docs/LAUNCH_REVIEW_2026-11-01.md`.
 - **M7:** threshold tay hone ke baad `enforce`. Ye tabhi jab har shop ki awaaz registered ho, warna uska mic reject hoga.
 - Pilot me abhi awaaz ka koi data **nahi** milta jab tak Voice Lock `off` hai; backend audio store nahi karta.
 
+## Ek hafte ka pilot
+Roz ka aur aakhri din ka poora checklist: `docs/PILOT_WEEK.md` (din 0 se din 7 tak, shops band karne tak).
+
 ## Render ko jaagta rakhna (keep-alive)
 Render free service 15 minute bina request ke so jaati hai. **UptimeRobot** (free) har 5-7 minute `GET https://quadrelix-voice-backend.onrender.com/ping`
 bhejta hai. `/ping` database ko **nahi** chhuta (warna Neon ka free compute 24 ghante jaagta rahega aur mahine ki limit khatam ho jaayegi);
