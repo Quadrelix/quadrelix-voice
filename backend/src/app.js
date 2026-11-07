@@ -40,7 +40,16 @@ app.get("/", (req, res) => {
   res.json({ status: "AI Business Assistant backend is running" });
 });
 
+// Keep-alive / "is the process up?" for free hosting. Deliberately touches NOTHING (no database):
+// an uptime monitor calling it every few minutes keeps Render awake without also keeping the
+// Neon compute awake (which has a monthly free allowance). Express answers HEAD for GET routes.
+app.get("/ping", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.type("text/plain").send("ok");
+});
+
 // Health check for Render and for "is the database reachable?" during setup.
+// This one DOES query the database, so do not point a frequent monitor at it.
 app.get("/health", async (req, res) => {
   try {
     const shopCount = (await db.listShops()).length;
