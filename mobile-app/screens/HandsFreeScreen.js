@@ -28,7 +28,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../services/i18n';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import Share from 'react-native-share';
 
 const COUNTDOWN_SEC = 3;
 
@@ -297,8 +296,10 @@ export default function HandsFreeScreen() {
   // chat with the bill attached. Returns true if it was opened, false to let the
   // caller fall back to the generic share sheet. Never throws.
   async function shareToCustomerChat(fileUri, rawPhone) {
-    // react-native-share is a native module: it does not exist in Expo Go (only in the
-    // built APK), so anything wrong here just means "use the plain share sheet".
+    // react-native-share is a native module: it exists only in the built APK, not in Expo Go.
+    // It is therefore loaded HERE, on demand (a top-level import would crash the whole app at
+    // start-up in Expo Go: "'RNShare' could not be found"). Anything wrong here just means
+    // "use the plain share sheet".
     try {
       return await openWhatsAppChat(fileUri, rawPhone);
     } catch {
@@ -307,6 +308,8 @@ export default function HandsFreeScreen() {
   }
 
   async function openWhatsAppChat(fileUri, rawPhone) {
+    const shareModule = require('react-native-share');
+    const Share = shareModule.default ?? shareModule;
     const digits = String(rawPhone || '').replace(/\D/g, '');
     // Indian numbers: 10 digits, or already with 91 / a leading 0.
     let number = null;

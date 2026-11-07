@@ -44,6 +44,13 @@ Postgres CI. Detail: `docs/LAUNCH_REVIEW_2026-11-01.md`.
 - **M7:** threshold tay hone ke baad `enforce`. Ye tabhi jab har shop ki awaaz registered ho, warna uska mic reject hoga.
 - Pilot me abhi awaaz ka koi data **nahi** milta jab tak Voice Lock `off` hai; backend audio store nahi karta.
 
+## Render ko jaagta rakhna (keep-alive)
+Render free service 15 minute bina request ke so jaati hai. **UptimeRobot** (free) har 5-7 minute `GET https://quadrelix-voice-backend.onrender.com/ping`
+bhejta hai. `/ping` database ko **nahi** chhuta (warna Neon ka free compute 24 ghante jaagta rahega aur mahine ki limit khatam ho jaayegi);
+`/health` DB check karta hai, use frequent monitor par mat lagao. Render ke dashboard me **Settings -> Health Check Path** bhi `/ping` rakho.
+Dhyan: Render free me mahine ke **750 ghante** hain; ek service 24x7 jaagi to ~744 lagte hain, doosri free service mat jodna, aur
+asli dukaanon se pehle paid Starter (~$7/mahina) lena behtar hai. Voice-service ke `/health` par ek alag UptimeRobot monitor sirf alert ke liye.
+
 ## Khule sawaal (owner tay karega)
 - Pilot me awaaz ke clips opt-in store hon (7 din, sahmati ke saath) ya sirf score?
 - WhatsApp caption aur automatic bhejna: WhatsApp Business API (Meta verification) — shuru nahi hua.

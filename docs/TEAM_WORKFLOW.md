@@ -308,11 +308,15 @@ Screenshot: (agar UI badla ho to 1-2 screenshot lagao)
 | Expo Go: "incompatible / SDK" | https://expo.dev/go se **SDK 54** wala Expo Go install karo |
 | QR scan par app nahi khulti | Laptop-phone same Wi-Fi? Nahi to `npx expo start --go --tunnel` |
 | Expo ne "development build" maanga | `--go` lagana bhool gaye: `npx expo start --go` |
+| Expo Go me laal screen: `'RNShare' could not be found` | Native package (`react-native-share`) Expo Go me nahi hota. Ye purane code me upar import hone se aata tha, ab fix hai: `git pull origin voice-lock-integration`, phir app me **Reload**. Naya native package kabhi file ke upar import mat karo; Expo Go me chalna zaroori hai to use `require(...)` se **use ke waqt** load karo (try/catch ke saath) |
 | App me "Network request failed" | Live backend soya ho sakta hai (pehli request ~1 min leti hai), dobara try karo. Local backend ho to IP/Wi-Fi/Firewall dekho (5.4) |
 | App purana URL/purana UI dikha rahi hai | `npx expo start --go --clear` |
 | "Shop code required" / pehle screen par atak gaye | Test shop ka code galat/missing. Owner se lo |
 | `npm install` me `ERR!` | `node_modules` folder aur `package-lock.json` ko chhedo mat; folder delete karke dobara `npm install`. Node LTS hai? (`node --version`) |
 | Bundler "out of memory" / bahut slow | Chrome waghaira band karo, laptop me ~2 GB RAM khaali rakho |
+| `Failed to construct transformer ... spawn UNKNOWN` (Expo shuru hote hi band) | Laptop ki memory khatam hai (Metro bahut saare worker process banata hai). Chrome/Docker band karo (`wsl --shutdown`), restart karo, phir `npx expo start --go --max-workers 2 --clear` (ya `--max-workers 1`) |
+| Terminal me `exp://127.0.0.1:8081` aaya (phone nahi kholta) | Expo ko Wi-Fi IP nahi mila. `ipconfig` se "Wi-Fi" ka IPv4 dekho aur `$env:REACT_NATIVE_PACKAGER_HOSTNAME="<wo IP>"` set karke dobara `npx expo start --go --max-workers 2 --clear` |
+| College / office Wi-Fi par phone laptop tak nahi pahunchta | Wi-Fi me "client isolation" ho sakta hai. Phone ka **hotspot** laptop se jodo, ya `npx expo start --go --tunnel` |
 | Port 3000 pehle se use me | Dusre PowerShell me `$env:PORT="3100"; npm start` (phir app ka URL bhi :3100) |
 | PowerShell me `&&` ka error | Windows PowerShell 5 `&&` nahi samajhta. Commands **ek-ek line** me chalao |
 | `git push` "rejected" | `git pull --rebase origin voice-lock-integration`, phir `git push` |
