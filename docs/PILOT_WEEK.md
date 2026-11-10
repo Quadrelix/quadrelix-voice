@@ -66,7 +66,10 @@ ya Render aur VM ka token alag hai, ya Voice Lock `off` hai (Render env: `VOICE_
    Wapas chalu karna ho: `PATCH /api/admin/shops/<shop_id>` body `{"active": true}`.
 7. **Awaaz ka fingerprint hatana** (owner kahe to): app me "आवाज़ दोबारा दर्ज करें" (PIN se) ya VM par volume saaf karna. Hum awaaz ki audio save nahi karte, sirf fingerprint aur score.
 8. **Kharcha rokna:**
-   - Azure portal -> VM `bizmate-voice` -> **Stop** (deallocate). Hamesha ke liye hatana ho to resource group `bizmate-voice-rg` delete.
+   - Azure portal -> VM `bizmate-voice` -> **Stop** (deallocate): isse sirf VM ke chalne ka kharcha rukta hai.
+     **Disk aur static IP ka kharcha tab bhi chalta rehta hai (~Rs 25-30 roz).** Poora rokna ho to resource group `bizmate-voice-rg` **delete** karo
+     (pehle voice log copy kar lo). Azure credit ka hisaab: portal -> Cost Management -> Cost analysis (Group by Resource). Pilot ke 7 din ka
+     kharcha ~Rs 880 raha (credit ka ~9%), roz ~Rs 125.
    - UptimeRobot ke monitors **Pause**.
 
 ## Agar trial aage chalana ho
