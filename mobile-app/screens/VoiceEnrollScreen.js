@@ -29,15 +29,18 @@ import { colors, shadow } from '../theme';
 
 const CLIP_SECONDS = 6;
 
-// Everyday Hinglish the owner is likely to say at the counter — plain words,
+// Everyday Hindi the owner is likely to say at the counter — plain words,
 // varied sounds, nothing that needs reading ahead. This is speech content, so it
-// is the same in both UI languages (not translated).
+// is ALWAYS shown in Hindi (Devanagari), whatever the UI language: the owner
+// speaks Hindi at the counter, so the voice profile should be recorded in Hindi
+// too. Deliberately not in i18n/strings — it must never be translated.
+// (Same words as the earlier Roman-script Hinglish, so existing profiles match.)
 const SENTENCES = [
-  'Aaj dukaan theek se chali, subah se shaam tak grahak aate rahe.',
-  'Do kilo cheeni aur ek kilo chawal ka hisaab likh lo.',
-  'Bill banane ke baad grahak ko WhatsApp par bhej dena.',
-  'Stock kam ho to naya maal mangwana zaroori hai.',
-  'Bhagwan ka shukar hai, roz ka kaam theek chal raha hai.',
+  'आज दुकान ठीक से चली, सुबह से शाम तक ग्राहक आते रहे।',
+  'दो किलो चीनी और एक किलो चावल का हिसाब लिख लो।',
+  'बिल बनाने के बाद ग्राहक को व्हाट्सऐप पर भेज देना।',
+  'स्टॉक कम हो तो नया माल मँगवाना ज़रूरी है।',
+  'भगवान का शुक्र है, रोज़ का काम ठीक चल रहा है।',
 ];
 
 // Which clips should be recorded in the shop's normal noise (T4.7).
@@ -294,7 +297,8 @@ const s = StyleSheet.create({
     width: '100%', ...shadow,
   },
   sentenceLabel: { fontSize: 13, color: colors.faint, fontWeight: '700', marginBottom: 8 },
-  sentence: { fontSize: 17, lineHeight: 26, color: colors.text, fontWeight: '600' },
+  // Devanagari needs more line height than Latin, or the matras (ि ी ु ू) get clipped.
+  sentence: { fontSize: 19, lineHeight: 32, color: colors.text, fontWeight: '600' },
   noisyNote: {
     flexDirection: 'row', alignItems: 'flex-start', backgroundColor: colors.orangeSoft,
     borderRadius: 10, padding: 10, marginTop: 12,
