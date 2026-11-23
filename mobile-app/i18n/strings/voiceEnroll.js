@@ -1,5 +1,6 @@
 // Strings for this screen: { en, hi }. Keys are prefixed with the screen name.
-// The sample sentences the owner reads aloud are speech content and stay in the screen file.
+// The sample sentences the owner reads aloud are speech content: they stay in the
+// screen file and are always Hindi, in both UI languages.
 export default {
   en: {
     'voiceEnroll.title': 'Voice Lock',
