@@ -10,8 +10,9 @@ import reports from './strings/reports';
 import voiceEnroll from './strings/voiceEnroll';
 import calibrate from './strings/calibrate';
 import shopDetails from './strings/shopDetails';
+import menu from './strings/menu';
 
-const parts = [common, home, handsfree, shop, products, customers, reports, voiceEnroll, calibrate, shopDetails];
+const parts = [common, home, handsfree, shop, products, customers, reports, voiceEnroll, calibrate, shopDetails, menu];
 
 const dictionary = { en: {}, hi: {} };
 for (const p of parts) {
