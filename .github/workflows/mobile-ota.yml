@@ -6,6 +6,9 @@ name: mobile-ota
 # - push to voice-lock-integration touching mobile-app/  -> `preview` channel
 # - manual run (Actions tab -> mobile-ota -> Run workflow) -> any channel
 #
+# Before publishing it runs the same checks as mobile.yml (i18n + bundle
+# compiles); a failure stops the publish.
+#
 # Needs one repo secret: EXPO_TOKEN (expo.dev -> Account -> Access tokens).
 #
 # OTA only carries JavaScript and assets. A new native package, a new Android
@@ -52,6 +55,13 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
       - run: npm ci
+      # Same checks as mobile.yml. They run again here because a push can reach
+      # this branch without a green PR (direct push, or a merge before CI
+      # finished). If either fails, nothing is published to phones.
+      - name: Hindi/English strings complete
+        run: node scripts/check-i18n.js
+      - name: App bundle compiles (same build as OTA)
+        run: npx expo export --platform android --output-dir "$RUNNER_TEMP/expo-export"
       - name: Publish update
         env:
           CHANNEL: ${{ github.event.inputs.channel || 'preview' }}

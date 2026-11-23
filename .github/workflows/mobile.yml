@@ -1,0 +1,44 @@
+name: mobile
+
+# Checks the mobile app on every PR that touches it, so a broken change is
+# caught here instead of on a shopkeeper's phone. A merge to
+# voice-lock-integration ships the app over the air (mobile-ota.yml) with no
+# human in between, so these checks are the last automatic gate.
+#
+#   1. check-i18n  — every string exists in BOTH Hindi and English, and every
+#                    t('key') used in the code is defined.
+#   2. expo export — builds the full Android JS bundle, exactly what an OTA
+#                    update ships. A syntax error, bad import or missing asset
+#                    fails here.
+#
+# What this does NOT catch: how screens look (cut-off text, layout on small
+# phones). That still needs a check on a real phone before merging.
+#
+# mobile-ota.yml runs the same two steps before publishing.
+
+on:
+  pull_request:
+    paths:
+      - "mobile-app/**"
+      - ".github/workflows/mobile.yml"
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile-app/package-lock.json
+      - run: npm ci
+      - name: Hindi/English strings complete
+        run: node scripts/check-i18n.js
+      - name: App bundle compiles (same build as OTA)
+        # EXPO_PUBLIC_API_URL is not set here, so the bundle points at the live
+        # Render backend — the same as what OTA ships.
+        run: npx expo export --platform android --output-dir "$RUNNER_TEMP/expo-export"
