@@ -1,0 +1,31 @@
+// Strings for the account menu (avatar button in the Home header + its sheet).
+export default {
+  en: {
+    'menu.a11yLabel': 'Menu, {shop}',
+    'menu.close': 'Close menu',
+    'menu.code': 'Code {code}',
+    'menu.language': 'Language',
+    'menu.shopDetails': 'Shop & bill details',
+    'menu.upi': 'UPI payment',
+    'menu.upiAdd': 'Add now',
+    'menu.voiceLock': 'Voice Lock',
+    'menu.voiceOn': 'On',
+    'menu.voiceSetup': 'Set up',
+    'menu.switchShop': 'Change shop',
+    'menu.version': 'Version {v}',
+  },
+  hi: {
+    'menu.a11yLabel': 'मेनू, {shop}',
+    'menu.close': 'मेनू बंद करें',
+    'menu.code': 'कोड {code}',
+    'menu.language': 'भाषा',
+    'menu.shopDetails': 'दुकान और बिल की जानकारी',
+    'menu.upi': 'UPI पेमेंट',
+    'menu.upiAdd': 'अभी जोड़ें',
+    'menu.voiceLock': 'वॉइस लॉक',
+    'menu.voiceOn': 'चालू',
+    'menu.voiceSetup': 'चालू करें',
+    'menu.switchShop': 'दुकान बदलें',
+    'menu.version': 'वर्ज़न {v}',
+  },
+};
