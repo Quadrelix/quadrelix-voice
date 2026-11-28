@@ -31,7 +31,7 @@ import {
   getVoiceStatus,
 } from '../services/api';
 import { useI18n } from '../services/i18n';
-import LanguageToggle from '../components/LanguageToggle';
+import AccountMenu from '../components/AccountMenu';
 import { colors, shadow, shadowStrong, money } from '../theme';
 
 export default function HomeScreen() {
@@ -83,8 +83,6 @@ export default function HomeScreen() {
     load({ silent: true });
   };
 
-  const shopName = shop?.shop_name || t('home.defaultShop');
-
 
   const goSale = () => navigation.navigate('HandsFree');
 
@@ -101,12 +99,6 @@ export default function HomeScreen() {
   };
 
   const lowStockCount = report?.low_stock?.length || 0;
-  const initials = shopName
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0].toUpperCase())
-    .join('');
 
   return (
     <View style={s.screen}>
@@ -122,15 +114,9 @@ export default function HomeScreen() {
           </Text>
         </View>
 
-        <View style={s.headerRight}>
-          <LanguageToggle />
-          <TouchableOpacity style={s.shopChip} onPress={() => navigation.navigate('ShopDetails')} activeOpacity={0.8}>
-            <View style={s.shopAvatar}>
-              <Text style={s.shopAvatarText}>{initials || 'S'}</Text>
-            </View>
-            <Text style={s.shopChipText} numberOfLines={1}>{shopName}</Text>
-          </TouchableOpacity>
-        </View>
+        {/* One button for profile, language, shop details, UPI, Voice Lock and
+            switch shop — see components/AccountMenu.js and design.md. */}
+        <AccountMenu shop={shop} voice={voice} />
       </View>
 
       <ScrollView
@@ -348,18 +334,6 @@ const s = StyleSheet.create({
   logo: { width: 36, height: 36, borderRadius: 10, marginRight: 9 },
   brand: { fontSize: 19, fontWeight: '800', color: colors.text, letterSpacing: -0.3 },
   brandAi: { color: colors.primary },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  shopChip: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card,
-    borderRadius: 20, paddingVertical: 4, paddingLeft: 4, paddingRight: 10, maxWidth: 120,
-    borderWidth: 1, borderColor: colors.line,
-  },
-  shopAvatar: {
-    width: 26, height: 26, borderRadius: 13, backgroundColor: colors.primarySoft,
-    alignItems: 'center', justifyContent: 'center', marginRight: 6,
-  },
-  shopAvatarText: { color: colors.primary, fontSize: 11, fontWeight: '800' },
-  shopChipText: { color: colors.text, fontSize: 12, fontWeight: '700', flexShrink: 1 },
 
   scroll: { paddingHorizontal: 18, paddingBottom: 20 },
   errorText: { color: colors.red, fontSize: 13, marginBottom: 10 },
